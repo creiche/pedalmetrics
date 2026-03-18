@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Align2, Ui};
+use egui::Ui;
 
 use crate::app::PedalmetricsApp;
 
@@ -43,28 +43,24 @@ impl<'a> PreviewPanel<'a> {
     }
 
     fn show_timeline(&mut self, ui: &mut Ui) {
-        let Some(loaded) = &self.app.loaded_activity else { return; };
-        let duration = loaded.duration_seconds as u32;
-        if duration == 0 { return; }
+        let Some((start, end)) = self.app.effective_scene_range() else { return; };
+        let clip_duration = end.saturating_sub(start);
+        if clip_duration == 0 { return; }
 
-        let start = self.app.template.scene.start;
-        let end = self.app.template.scene.end.min(duration);
-        let mut selected = self.app.selected_second.clamp(start, end.saturating_sub(1));
+        let mut selected = self.app.selected_second.min(clip_duration.saturating_sub(1));
 
         ui.horizontal(|ui| {
             ui.label(format!("{}", fmt_time(start)));
 
             let resp = ui.add(
-                egui::Slider::new(&mut selected, start..=end.saturating_sub(1))
+                egui::Slider::new(&mut selected, 0..=clip_duration.saturating_sub(1))
                     .show_value(false)
-                    .clamp_to_range(true)
             );
 
-            ui.label(format!("{}", fmt_time(selected)));
+            ui.label(format!("{}", fmt_time(start + selected)));
             ui.label(format!("/ {}", fmt_time(end)));
 
             if resp.changed() {
-                let was_scrubbing = self.app.scrubbing;
                 self.app.scrubbing = resp.dragged();
                 self.app.selected_second = selected;
 
@@ -81,10 +77,20 @@ impl<'a> PreviewPanel<'a> {
 
         // Scene start/end time range
         ui.horizontal(|ui| {
+            let full_duration = self
+                .app
+                .loaded_activity
+                .as_ref()
+                .map(|l| l.full_duration_seconds as u32)
+                .unwrap_or(0);
+            if full_duration == 0 {
+                return;
+            }
+
             ui.label("Start:");
             let mut scene_start = self.app.template.scene.start;
             if ui.add(egui::DragValue::new(&mut scene_start)
-                .range(0..=end.saturating_sub(1))
+                .range(0..=full_duration.saturating_sub(1))
                 .suffix("s")).changed()
             {
                 self.app.template.scene.start = scene_start;
@@ -94,7 +100,7 @@ impl<'a> PreviewPanel<'a> {
             ui.label("End:");
             let mut scene_end = self.app.template.scene.end;
             if ui.add(egui::DragValue::new(&mut scene_end)
-                .range(scene_start + 1..=duration)
+                .range(scene_start + 1..=full_duration)
                 .suffix("s")).changed()
             {
                 self.app.template.scene.end = scene_end;

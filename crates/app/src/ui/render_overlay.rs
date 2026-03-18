@@ -1,5 +1,4 @@
 use eframe::egui;
-use egui::Ui;
 
 use crate::app::PedalmetricsApp;
 

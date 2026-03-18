@@ -1,13 +1,12 @@
 use anyhow::{Context, Result};
-use image::RgbaImage;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ffmpeg_next as ffmpeg;
-use ffmpeg_next::codec::encoder::video::Video as VideoEncoder_ff;
-use ffmpeg_next::format::{context::Output, output};
-use ffmpeg_next::{codec, encoder, format, frame, media, picture, Dictionary, Rational};
+use ffmpeg_next::format::output;
+use ffmpeg_next::software::scaling::{context::Context as Scaler, flag::Flags};
+use ffmpeg_next::{codec, encoder, format, frame, Dictionary, Rational};
 
 use crate::renderer::Renderer;
 use crate::constant::downloads_dir;
@@ -77,7 +76,7 @@ impl VideoEncoder {
     /// Returns the path of the output file.
     pub fn encode(
         &self,
-        mut renderer: Renderer,
+        renderer: Renderer,
         progress: Option<&RenderProgress>,
     ) -> Result<PathBuf> {
         ffmpeg::init().context("Failed to initialize FFmpeg")?;
@@ -93,43 +92,11 @@ impl VideoEncoder {
                 .with_context(|| format!("Cannot create output directory: {}", parent.display()))?;
         }
 
-        // --- Parallel frame rendering ---
-        // Render all frames in parallel using rayon, then encode sequentially.
-        log::info!("Rendering {} frames at {}x{} @ {}fps", total, width, height, fps);
+        // --- Streaming render + encode ---
+        // Render and encode one frame at a time to avoid unbounded 4K RGBA memory usage.
+        log::info!("Rendering + encoding {} frames at {}x{} @ {}fps", total, width, height, fps);
 
-        use rayon::prelude::*;
-
-        // Collect frame indices
-        let frame_indices: Vec<usize> = (0..total as usize).collect();
-
-        // Clone renderer state for parallel use
-        // We use the RenderState directly via Arc to share read-only data
-        let state = Arc::new(renderer.into_state());
-
-        let rendered: Vec<Result<RgbaImage>> = frame_indices
-            .par_iter()
-            .map(|&idx| {
-                if let Some(p) = &progress {
-                    if p.is_cancelled() {
-                        return Err(anyhow::anyhow!("Render cancelled"));
-                    }
-                }
-                let img = state.render_frame(idx)?;
-                if let Some(p) = &progress {
-                    p.current_frame.fetch_add(1, Ordering::Relaxed);
-                }
-                Ok(img)
-            })
-            .collect();
-
-        // Check for cancellation or errors
-        let frames: Vec<RgbaImage> = rendered
-            .into_iter()
-            .collect::<Result<Vec<_>>>()
-            .context("Frame rendering failed")?;
-
-        // --- Sequential encoding ---
-        log::info!("Encoding {} frames → {}", frames.len(), self.output_path.display());
+        let mut renderer = renderer;
 
         let mut octx = output(&self.output_path)
             .with_context(|| format!("Cannot open output file: {}", self.output_path.display()))?;
@@ -160,33 +127,61 @@ impl VideoEncoder {
             .context("Failed to open ProRes encoder")?;
         ost.set_parameters(&encoder);
 
+        let mut scaler = Scaler::get(
+            format::Pixel::RGBA,
+            width,
+            height,
+            format::Pixel::YUVA444P10LE,
+            width,
+            height,
+            Flags::BILINEAR,
+        )
+        .context("Failed to create RGBA -> YUVA444P10LE scaler")?;
+
         format::context::output::dump(&octx, 0, Some(&self.output_path.to_string_lossy()));
         octx.write_header().context("Failed to write video header")?;
 
         let time_base = Rational::new(1, fps as i32);
 
-        for (i, rgba_img) in frames.iter().enumerate() {
-            let mut av_frame = frame::Video::new(format::Pixel::RGBA, width, height);
+        for i in 0..total as usize {
+            if let Some(p) = &progress {
+                if p.is_cancelled() {
+                    return Err(anyhow::anyhow!("Render cancelled"));
+                }
+            }
+
+            let rgba_img = renderer
+                .render_frame(i)
+                .with_context(|| format!("Failed to render frame {}", i))?;
+            if let Some(p) = &progress {
+                p.current_frame.fetch_add(1, Ordering::Relaxed);
+            }
+
+            let mut src_frame = frame::Video::new(format::Pixel::RGBA, width, height);
 
             // Copy RGBA pixel data into the ffmpeg frame
             let src = rgba_img.as_raw();
             // Get stride before taking a mutable borrow of data
             let row_size = width as usize * 4;
-            let stride = av_frame.stride(0);
+            let stride = src_frame.stride(0);
             {
-                let dst = av_frame.data_mut(0);
+                let dst = src_frame.data_mut(0);
                 for row in 0..height as usize {
-                let src_off = row * row_size;
-                let dst_off = row * stride;
-                let len = row_size.min(stride);
-                    dst[dst_off..dst_off + len].copy_from_slice(&src[src_off..src_off + row_size]);
+                    let src_off = row * row_size;
+                    let dst_off = row * stride;
+                    let len = row_size.min(stride);
+                    dst[dst_off..dst_off + len].copy_from_slice(&src[src_off..src_off + len]);
                 }
             } // drop mutable borrow of dst
 
-            av_frame.set_pts(Some(i as i64));
+            let mut dst_frame = frame::Video::new(format::Pixel::YUVA444P10LE, width, height);
+            scaler
+                .run(&src_frame, &mut dst_frame)
+                .with_context(|| format!("Failed to scale frame {}", i))?;
+            dst_frame.set_pts(Some(i as i64));
 
-            // Send frame to encoder (will internally convert RGBA → yuva444p10le)
-            encoder.send_frame(&av_frame)
+            // Send frame to encoder
+            encoder.send_frame(&dst_frame)
                 .with_context(|| format!("Failed to send frame {} to encoder", i))?;
 
             // Drain packets

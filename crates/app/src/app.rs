@@ -27,8 +27,8 @@ use crate::ui::{
 /// The loaded GPX + processed activity data.
 pub struct LoadedActivity {
     pub path: PathBuf,
-    pub activity: Activity,
-    pub duration_seconds: usize,
+    pub source_activity: Activity,
+    pub full_duration_seconds: usize,
 }
 
 /// Preview render request sent to the background thread.
@@ -40,7 +40,6 @@ struct PreviewRequest {
 /// Preview render result returned from the background thread.
 struct PreviewResult {
     image: RgbaImage,
-    frame_idx: usize,
 }
 
 /// Video render state.
@@ -70,9 +69,9 @@ pub struct PedalmetricsApp {
 
     // --- Preview ---
     pub preview_texture: Option<TextureHandle>,
-    pub preview_pending: Arc<Mutex<Option<PreviewResult>>>,
-    pub preview_request: Arc<Mutex<Option<PreviewRequest>>>,
-    pub preview_thread_running: Arc<AtomicBool>,
+    preview_pending: Arc<Mutex<Option<PreviewResult>>>,
+    preview_request: Arc<Mutex<Option<PreviewRequest>>>,
+    preview_thread_running: Arc<AtomicBool>,
 
     // --- Video render ---
     pub video_render: Option<VideoRenderState>,
@@ -86,16 +85,19 @@ pub struct PedalmetricsApp {
 }
 
 impl PedalmetricsApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         // Load available templates
         let available_templates = Self::scan_templates_pub();
 
-        // Load the first bundled template as the default
-        let template = available_templates
-            .first()
-            .and_then(|(_, path)| {
-                std::fs::read_to_string(path).ok()
-                    .and_then(|s| Template::from_json(&s).ok())
+        // Use bundled default first, then user templates, then hardcoded fallback.
+        let template = Self::bundled_default_template()
+            .or_else(|| {
+                available_templates
+                    .first()
+                    .and_then(|(_, path)| {
+                        std::fs::read_to_string(path).ok()
+                            .and_then(|s| Template::from_json(&s).ok())
+                    })
             })
             .unwrap_or_else(Template::default_4k);
 
@@ -145,6 +147,26 @@ impl PedalmetricsApp {
         templates
     }
 
+    fn bundled_default_template() -> Option<Template> {
+        Template::from_json(include_str!("../../../templates/walker_crit_a.json")).ok()
+    }
+
+    /// Returns an effective `[start, end)` range in absolute seconds, clamped to activity length.
+    pub fn effective_scene_range(&self) -> Option<(u32, u32)> {
+        let loaded = self.loaded_activity.as_ref()?;
+        let max_end = loaded.full_duration_seconds as u32;
+        if max_end == 0 {
+            return None;
+        }
+
+        let start = self.template.scene.start.min(max_end.saturating_sub(1));
+        let mut end = self.template.scene.end.min(max_end);
+        if end <= start {
+            end = (start + 1).min(max_end);
+        }
+        Some((start, end))
+    }
+
     // -----------------------------------------------------------------------
     // GPX file loading
     // -----------------------------------------------------------------------
@@ -152,23 +174,13 @@ impl PedalmetricsApp {
     pub fn load_gpx(&mut self, path: PathBuf) {
         self.status_message = format!("Loading {}…", path.display());
         match Activity::from_path(&path) {
-            Ok(mut activity) => {
+            Ok(activity) => {
                 let duration = activity.duration_seconds();
-                // Trim and interpolate with scene settings
-                let start = self.template.scene.start as usize;
-                let end = (self.template.scene.end as usize).min(duration);
-                let fps = self.template.scene.fps;
-
-                if start < end {
-                    let _ = activity.trim(start, end);
-                }
-                activity.interpolate(fps);
-
                 self.selected_second = 0;
                 self.loaded_activity = Some(LoadedActivity {
                     path,
-                    activity,
-                    duration_seconds: duration,
+                    source_activity: activity,
+                    full_duration_seconds: duration,
                 });
                 self.render_state_dirty = true;
                 self.status_message = format!("Loaded activity ({} seconds)", duration);
@@ -186,9 +198,25 @@ impl PedalmetricsApp {
 
     fn rebuild_render_state(&mut self) {
         let Some(loaded) = &self.loaded_activity else { return; };
+        let Some((start, end)) = self.effective_scene_range() else { return; };
+
+        let mut activity = loaded.source_activity.clone();
+        // Keep both endpoints [start, end] in samples to produce (end-start)*fps frames.
+        let trim_end_exclusive = (end as usize + 1).min(activity.times.len());
+        if (start as usize) < trim_end_exclusive {
+            if let Err(e) = activity.trim(start as usize, trim_end_exclusive) {
+                self.status_message = format!("Render state error: {}", e);
+                log::error!("Activity trim error: {:?}", e);
+                return;
+            }
+        }
+        activity.interpolate(self.template.scene.fps);
+
+        let clip_duration = end.saturating_sub(start);
+        self.selected_second = self.selected_second.min(clip_duration.saturating_sub(1));
 
         match RenderState::build(
-            loaded.activity.clone(),
+            activity,
             self.template.clone(),
             fonts_dir(),
         ) {
@@ -210,6 +238,13 @@ impl PedalmetricsApp {
 
     pub fn trigger_preview(&mut self) {
         let Some(state) = &self.render_state else { return; };
+        let Some((start, end)) = self.effective_scene_range() else { return; };
+        let clip_duration = end.saturating_sub(start);
+        if clip_duration == 0 {
+            return;
+        }
+
+        self.selected_second = self.selected_second.min(clip_duration - 1);
 
         let fps = self.template.scene.fps as usize;
         let frame_idx = self.selected_second as usize * fps;
@@ -245,7 +280,6 @@ impl PedalmetricsApp {
                         if let Ok(img) = result {
                             *result_slot.lock().unwrap() = Some(PreviewResult {
                                 image: img,
-                                frame_idx: req.frame_idx,
                             });
                         }
                     }
@@ -261,6 +295,7 @@ impl PedalmetricsApp {
 
     pub fn on_template_change(&mut self, new_template: Template) {
         self.template = new_template;
+        self.selected_second = 0;
         self.render_state_dirty = true;
     }
 
@@ -269,7 +304,7 @@ impl PedalmetricsApp {
     // -----------------------------------------------------------------------
 
     pub fn start_video_render(&mut self) {
-        let Some(loaded) = &self.loaded_activity else { return; };
+        let Some(_loaded) = &self.loaded_activity else { return; };
         let Some(state) = &self.render_state else { return; };
 
         let total = self.template.scene.total_frames();

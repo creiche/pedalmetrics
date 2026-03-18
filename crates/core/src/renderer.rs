@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
+use image::imageops::FilterType;
 use image::{ImageBuffer, Rgba, RgbaImage};
 use std::collections::HashMap;
 use std::path::Path;
-use chrono::{DateTime, Utc, TimeZone, Duration};
+use chrono::{TimeZone, Utc};
+use std::sync::{Arc, Mutex};
 
 use crate::activity::Activity;
 use crate::constant::{FT_CONVERSION, KMH_CONVERSION, MPH_CONVERSION};
@@ -71,6 +73,7 @@ pub struct RenderState {
     /// Pre-rendered plot backgrounds (one per PlotConfig index)
     pub plot_caches: Vec<PlotCache>,
     pub font_dir: std::path::PathBuf,
+    pub font_cache: Arc<Mutex<FontCache>>,
 }
 
 impl RenderState {
@@ -105,6 +108,7 @@ impl RenderState {
             activity,
             base_image,
             plot_caches,
+            font_cache: Arc::new(Mutex::new(FontCache::new(&font_dir))),
             font_dir,
         })
     }
@@ -122,10 +126,11 @@ impl RenderState {
     }
 
     fn render_frame_at_scale(&self, frame_idx: usize, scale: f32) -> Result<RgbaImage> {
-        let w = self.template.scene.width;
-        let h = self.template.scene.height;
         let mut img = self.base_image.clone();
-        let mut font_cache = FontCache::new(&self.font_dir);
+        let mut font_cache = self
+            .font_cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Font cache mutex poisoned"))?;
 
         // Draw values (dynamic telemetry text)
         for value_config in &self.template.values {
@@ -160,7 +165,14 @@ impl RenderState {
             composite_onto(&mut img, &plot_img, plot_config.x, plot_config.y);
         }
 
-        Ok(img)
+        if (scale - 1.0).abs() < f32::EPSILON {
+            Ok(img)
+        } else {
+            let s = scale.clamp(0.1, 1.0);
+            let new_w = ((img.width() as f32) * s).round().max(1.0) as u32;
+            let new_h = ((img.height() as f32) * s).round().max(1.0) as u32;
+            Ok(image::imageops::resize(&img, new_w, new_h, FilterType::Triangle))
+        }
     }
 }
 
@@ -170,16 +182,11 @@ impl RenderState {
 
 pub struct Renderer {
     state: RenderState,
-    font_cache: FontCache,
 }
 
 impl Renderer {
     pub fn new(state: RenderState) -> Self {
-        let font_dir = state.font_dir.clone();
-        Self {
-            state,
-            font_cache: FontCache::new(font_dir),
-        }
+        Self { state }
     }
 
     pub fn render_frame(&mut self, frame_idx: usize) -> Result<RgbaImage> {
@@ -318,7 +325,8 @@ fn draw_text(
     font_cache: &mut FontCache,
 ) {
     let font = font_cache.get_or_load(font_name);
-    let [r, g, b, _] = color.to_rgba_with_opacity(opacity);
+    let [r, g, b, a] = color.to_rgba();
+    let color_alpha = (a as f32 / 255.0) * opacity.clamp(0.0, 1.0);
 
     let mut cursor_x = x;
     for ch in text.chars() {
@@ -339,7 +347,7 @@ fn draw_text(
                 }
 
                 let pixel = img.get_pixel_mut(px as u32, py as u32);
-                let src_a = (alpha as f32 / 255.0) * opacity;
+                let src_a = (alpha as f32 / 255.0) * color_alpha;
                 let dst_a = pixel[3] as f32 / 255.0;
                 // Alpha compositing: src over dst
                 let out_a = src_a + dst_a * (1.0 - src_a);

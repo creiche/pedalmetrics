@@ -1,6 +1,6 @@
 use anyhow::Result;
 use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Paint, Path, PathBuilder, Pixmap, PixmapMut,
+    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap,
     Stroke, Transform,
 };
 
@@ -73,7 +73,6 @@ impl PlotCache {
         pixmap.fill(Color::TRANSPARENT);
 
         let line_color = config.line.color.as_ref().unwrap_or(scene_color);
-        let line_rgba = line_color.to_rgba();
         let line_alpha = config.opacity.unwrap_or(1.0);
         let line_rgba_w_alpha = line_color.to_rgba_with_opacity(line_alpha);
 
@@ -110,7 +109,11 @@ impl PlotCache {
                     }
                     pb.close();
                     if let Some(path) = pb.finish() {
-                        let fill_color = config.color.as_ref().unwrap_or(scene_color);
+                        let fill_color = fill
+                            .color
+                            .as_ref()
+                            .or(config.color.as_ref())
+                            .unwrap_or(scene_color);
                         let [r, g, b, _] = fill_color.to_rgba();
                         let alpha = (fill.opacity * 255.0) as u8;
                         let mut paint = Paint::default();
@@ -225,7 +228,6 @@ impl PlotCache {
 // ---------------------------------------------------------------------------
 
 use crate::activity::Activity;
-use crate::template::ValueType;
 
 /// Build (x_data, y_data) arrays for a plot from the activity.
 /// For course: x = longitude, y = latitude.

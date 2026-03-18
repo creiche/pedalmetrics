@@ -2,7 +2,7 @@ use eframe::egui;
 use egui::Ui;
 
 use crate::app::PedalmetricsApp;
-use pedalmetrics_core::template::{Color, LabelConfig, ValueConfig, ValueType, UnitSystem};
+use pedalmetrics_core::template::{Color, LabelConfig, UnitSystem, ValueType};
 
 pub struct TemplateEditor<'a> {
     app: &'a mut PedalmetricsApp,

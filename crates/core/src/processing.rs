@@ -44,10 +44,10 @@ pub fn interpolate_channel(data: &[f64], fps: u32) -> Vec<f64> {
 /// polynomial least-squares fit and applies them as a FIR filter.
 /// Edge points (within window/2 of the boundary) are left unsmoothed.
 pub fn savgol_filter(data: &[f64], window: usize, poly_order: usize) -> Vec<f64> {
-    if data.len() < window || window < 3 {
+    let w = if window % 2 == 0 { window + 1 } else { window };
+    if w < 3 || data.len() < w || poly_order >= w {
         return data.to_vec();
     }
-    let w = if window % 2 == 0 { window + 1 } else { window };
     let half = w / 2;
     let coeffs = savgol_coefficients(w, poly_order);
 
@@ -230,14 +230,6 @@ pub fn lowess_smooth(data: &[f64], fraction: f64, iterations: usize) -> Vec<f64>
                 c
             }).collect();
 
-            // Weighted linear regression: y = a + b*x, solve for a, b
-            let (a, _b) = weighted_linear_regression(
-                &x[lo..hi],
-                &y[lo..hi],
-                &weights,
-            );
-
-            // Fitted value at xi
             let wsum: f64 = weights.iter().sum();
             if wsum < 1e-10 {
                 smoothed[i] = y[i];
@@ -251,19 +243,6 @@ pub fn lowess_smooth(data: &[f64], fraction: f64, iterations: usize) -> Vec<f64>
         y = smoothed;
     }
     y
-}
-
-/// Fit y = a + b*x with weights. Returns (intercept a, slope b).
-fn weighted_linear_regression(x: &[f64], y: &[f64], w: &[f64]) -> (f64, f64) {
-    let sw: f64 = w.iter().sum();
-    if sw < 1e-10 { return (0.0, 0.0); }
-    let xbar = x.iter().zip(w).map(|(&xi, &wi)| xi * wi).sum::<f64>() / sw;
-    let ybar = y.iter().zip(w).map(|(&yi, &wi)| yi * wi).sum::<f64>() / sw;
-    let sxx: f64 = x.iter().zip(w).map(|(&xi, &wi)| wi * (xi - xbar).powi(2)).sum();
-    let sxy: f64 = x.iter().zip(y).zip(w).map(|((&xi, &yi), &wi)| wi * (xi - xbar) * (yi - ybar)).sum();
-    let b = if sxx.abs() > 1e-10 { sxy / sxx } else { 0.0 };
-    let a = ybar - b * xbar;
-    (a, b)
 }
 
 // ---------------------------------------------------------------------------

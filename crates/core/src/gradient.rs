@@ -1,5 +1,5 @@
 use crate::activity::haversine_distance;
-use crate::processing::{lowess_smooth, savgol_filter, zscore_outlier_replace};
+use crate::processing::{lowess_smooth, zscore_outlier_replace};
 
 /// Compute the elevation angle (degrees) between two consecutive GPS points.
 /// Equivalent to Python's `gpxpy.geo.elevation_angle(loc1, loc2)`.

@@ -53,8 +53,8 @@ impl<'a> ControlPanel<'a> {
                 .to_string_lossy();
             ui.label(format!("📄 {}", name));
             ui.label(format!("Duration: {}:{:02}",
-                loaded.duration_seconds / 60,
-                loaded.duration_seconds % 60));
+                loaded.full_duration_seconds / 60,
+                loaded.full_duration_seconds % 60));
             ui.add_space(4.0);
         }
 

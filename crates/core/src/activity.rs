@@ -325,10 +325,10 @@ pub fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 fn parse_garmin_extensions(pt: &gpx::Waypoint) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
     // The `gpx` crate exposes extensions as raw XML strings in some versions.
     // We look for common Garmin patterns.
-    let mut hr: Option<f64> = None;
-    let mut cad: Option<f64> = None;
-    let mut pwr: Option<f64> = None;
-    let mut temp: Option<f64> = None;
+    let hr: Option<f64> = None;
+    let cad: Option<f64> = None;
+    let pwr: Option<f64> = None;
+    let temp: Option<f64> = None;
 
     // gpx crate >= 0.10 may expose speed and heartrate directly on Waypoint
     if let Some(spd) = pt.speed {
@@ -345,6 +345,6 @@ fn parse_garmin_extensions(pt: &gpx::Waypoint) -> (Option<f64>, Option<f64>, Opt
 
 /// Placeholder for raw XML extension parsing via quick-xml.
 /// Will be implemented to parse `<gpxtpx:TrackPointExtension>` nodes.
-fn parse_extensions(raw: &Option<String>) -> HashMap<String, f64> {
+fn parse_extensions(_raw: &Option<String>) -> HashMap<String, f64> {
     HashMap::new()
 }

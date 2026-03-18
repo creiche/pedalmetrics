@@ -45,6 +45,9 @@ self-contained macOS application written entirely in Rust, providing:
 - macOS (Apple Silicon or Intel)
 - [Homebrew FFmpeg](https://formulae.brew.sh/formula/ffmpeg): `brew install ffmpeg`
 
+For local development, FFmpeg must be installed so `ffmpeg-next` can link
+against the shared libraries.
+
 ## Building
 
 ```sh
@@ -52,6 +55,36 @@ cargo build --release
 ```
 
 The binary will be at `target/release/pedalmetrics`.
+
+## Packaging For End Users (No System FFmpeg Required)
+
+If you distribute a `.app`, bundle FFmpeg dylibs into the app so users do not
+need Homebrew FFmpeg installed.
+
+1. Build your app bundle (using your preferred macOS bundler/workflow).
+2. Run:
+
+```sh
+scripts/macos_bundle_ffmpeg.sh /path/to/Pedalmetrics.app
+```
+
+Optional explicit FFmpeg prefix:
+
+```sh
+scripts/macos_bundle_ffmpeg.sh /path/to/Pedalmetrics.app /opt/homebrew/opt/ffmpeg
+```
+
+This copies `libav*` and `libsw*` dylibs into `Contents/Frameworks`, rewrites
+library references to `@rpath`, and re-signs the bundle ad-hoc.
+
+Quick verification:
+
+```sh
+otool -L /path/to/Pedalmetrics.app/Contents/MacOS/pedalmetrics
+```
+
+You should see FFmpeg references resolved via `@rpath/...` instead of Homebrew
+Cellar paths.
 
 ## Usage
 

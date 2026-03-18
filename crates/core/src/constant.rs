@@ -1,11 +1,3 @@
-/// Unit systems for value display
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum UnitSystem {
-    Imperial,
-    Metric,
-}
-
 /// Conversion factors
 pub const MPH_CONVERSION: f64 = 2.23694;   // m/s → mph
 pub const KMH_CONVERSION: f64 = 3.6;       // m/s → km/h
