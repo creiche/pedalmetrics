@@ -1,0 +1,29 @@
+[package]
+name = "pedalmetrics-app"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "pedalmetrics"
+path = "src/main.rs"
+
+[dependencies]
+pedalmetrics-core = { path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+rfd = { workspace = true }
+rayon = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+chrono = { workspace = true }
+image = { workspace = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,27 @@
+[package]
+name = "pedalmetrics-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+gpx = { workspace = true }
+quick-xml = { workspace = true }
+ndarray = { workspace = true }
+tiny-skia = { workspace = true }
+ab_glyph = { workspace = true }
+fontdue = { workspace = true }
+image = { workspace = true }
+imageproc = { workspace = true }
+ffmpeg-next = { workspace = true }
+rayon = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+
+[build-dependencies]
+# ffmpeg-next needs pkg-config to find the libraries at build time
+pkg-config = "0.3"

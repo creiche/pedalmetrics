@@ -1,0 +1,4 @@
+[env]
+# Make PKG_CONFIG_PATH available to build scripts (e.g. ffmpeg-sys-next)
+# This covers both Apple Silicon (/opt/homebrew) and Intel (/usr/local) Homebrew.
+PKG_CONFIG_PATH = "/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/ffmpeg/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/opt/ffmpeg/lib/pkgconfig"
