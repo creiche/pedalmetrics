@@ -225,3 +225,43 @@ impl VideoEncoder {
         Ok(self.output_path.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_can_open_prores_ks_encoder_context() {
+        // If FFmpeg isn't available in the test environment, avoid a hard failure.
+        if ffmpeg::init().is_err() {
+            eprintln!("Skipping test_can_open_prores_ks_encoder_context: ffmpeg init failed");
+            return;
+        }
+
+        let Some(prores_codec) = encoder::find_by_name("prores_ks") else {
+            eprintln!("Skipping test_can_open_prores_ks_encoder_context: prores_ks not available");
+            return;
+        };
+
+        let mut enc = codec::context::Context::new_with_codec(prores_codec)
+            .encoder()
+            .video()
+            .expect("Expected video encoder context for prores_ks");
+
+        enc.set_width(1920);
+        enc.set_height(1080);
+        enc.set_format(format::Pixel::YUVA444P10LE);
+        enc.set_frame_rate(Some(Rational::new(30, 1)));
+        enc.set_time_base(Rational::new(1, 30));
+
+        let mut opts = Dictionary::new();
+        opts.set("profile:v", "4");
+
+        let opened = enc.open_with(opts);
+        assert!(
+            opened.is_ok(),
+            "Expected prores_ks encoder to open, got: {:?}",
+            opened.err()
+        );
+    }
+}
