@@ -386,15 +386,17 @@ impl<'a> TemplateEditor<'a> {
                                 let point = &mut plot.points[pidx];
 
                                 ui.horizontal(|ui| {
-                                    ui.label("Size:");
+                                    ui.label("Radius (px):");
+                                    let mut marker_radius = point.radius;
                                     if ui
                                         .add(
-                                            egui::DragValue::new(&mut point.weight)
-                                                .range(1.0..=2000.0)
-                                                .speed(1.0),
+                                            egui::DragValue::new(&mut marker_radius)
+                                                .range(0.5..=200.0)
+                                                .speed(0.25),
                                         )
                                         .changed()
                                     {
+                                        point.radius = marker_radius.max(0.5);
                                         changed = true;
                                     }
                                 });

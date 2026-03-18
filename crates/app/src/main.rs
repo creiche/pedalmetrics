@@ -1,8 +1,12 @@
 mod app;
 mod ui;
 
+use std::path::PathBuf;
+
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let initial_gpx_path = std::env::args_os().nth(1).map(PathBuf::from);
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -16,7 +20,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Pedalmetrics",
         native_options,
-        Box::new(|cc| Ok(Box::new(app::PedalmetricsApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::PedalmetricsApp::new(cc, initial_gpx_path.clone())))),
     )
 }
 

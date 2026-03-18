@@ -6,8 +6,7 @@ pub const FT_CONVERSION: f64 = 3.28084;    // m → ft
 /// Default styling values
 pub const DEFAULT_DPI: u32 = 300;
 pub const DEFAULT_LINE_WIDTH: f32 = 1.75;
-pub const DEFAULT_MARGIN: f64 = 0.1;
-pub const DEFAULT_POINT_WEIGHT: f32 = 80.0;
+pub const DEFAULT_POINT_RADIUS: f32 = 3.0;
 pub const DEFAULT_OPACITY: f32 = 1.0;
 pub const DEFAULT_COLOR: &str = "#ffffff";
 pub const DEFAULT_FONT_SIZE: f32 = 30.0;

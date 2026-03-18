@@ -6,18 +6,47 @@ use tiny_skia::{
 
 use crate::template::{Color as TemplateColor, PlotConfig, PlotType, PointStyle};
 
+const MIN_MARKER_RADIUS_PX: f32 = 0.5;
+
 // ---------------------------------------------------------------------------
 // Coordinate mapping
 // ---------------------------------------------------------------------------
 
-/// Map a data value to a pixel coordinate within [margin, size - margin].
-fn map_value(val: f64, min: f64, max: f64, size: u32, margin: f64) -> f32 {
+/// Map a data value to a pixel coordinate within [0, size].
+fn map_value(val: f64, min: f64, max: f64, size: u32) -> f32 {
+    map_value_with_padding(val, min, max, size, 0.0)
+}
+
+/// Map a data value to a pixel coordinate within [padding_px, size - padding_px].
+fn map_value_with_padding(val: f64, min: f64, max: f64, size: u32, padding_px: f64) -> f32 {
     if (max - min).abs() < 1e-10 {
         return size as f32 / 2.0;
     }
-    let margin_px = size as f64 * margin;
-    let range_px = size as f64 - 2.0 * margin_px;
-    (margin_px + (val - min) / (max - min) * range_px) as f32
+    let max_padding = (size as f64 / 2.0 - 1.0).max(0.0);
+    let pad = padding_px.clamp(0.0, max_padding);
+    let drawable = (size as f64 - 2.0 * pad).max(1.0);
+    (pad + (val - min) / (max - min) * drawable) as f32
+}
+
+fn marker_radius_px(point: &PointStyle) -> f64 {
+    point.radius.max(MIN_MARKER_RADIUS_PX) as f64
+}
+
+fn course_padding_px(config: &PlotConfig) -> f64 {
+    if config.value != PlotType::Course {
+        return 0.0;
+    }
+    let marker_pad = if config.points.is_empty() {
+        marker_radius_px(&PointStyle::default())
+    } else {
+        config
+            .points
+            .iter()
+            .map(marker_radius_px)
+            .fold(0.0_f64, f64::max)
+    };
+    let stroke_pad = (config.line.width as f64 / 2.0).max(1.0);
+    marker_pad.max(stroke_pad) + 1.0
 }
 
 // ---------------------------------------------------------------------------
@@ -59,12 +88,12 @@ impl PlotCache {
 
         let w = config.width;
         let h = config.height;
-        let margin = config.margin;
 
         let x_min = x_data.iter().cloned().fold(f64::INFINITY, f64::min);
         let x_max = x_data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let y_min = y_data.iter().cloned().fold(f64::INFINITY, f64::min);
         let y_max = y_data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let course_pad = course_padding_px(config);
 
         let mut pixmap = Pixmap::new(w, h)
             .ok_or_else(|| anyhow::anyhow!("Failed to create Pixmap {}x{}", w, h))?;
@@ -84,15 +113,15 @@ impl PlotCache {
         // Map data points to pixels
         // For course: we flip y (latitude increases upward, pixels increase downward)
         let pixels: Vec<(f32, f32)> = x_data.iter().zip(&y_data).map(|(&x, &y)| {
-            let px = map_value(x, x_min, x_max, w, margin);
+            let px = map_value_with_padding(x, x_min, x_max, w, course_pad);
             let py = match config.value {
                 PlotType::Course => {
                     // Flip y-axis: higher latitude = higher on screen
-                    h as f32 - map_value(y, y_min, y_max, h, margin)
+                    h as f32 - map_value_with_padding(y, y_min, y_max, h, course_pad)
                 }
                 PlotType::Elevation => {
                     // Flip y-axis: higher elevation = higher on screen
-                    h as f32 - map_value(y, y_min, y_max, h, margin)
+                    h as f32 - map_value(y, y_min, y_max, h)
                 }
             };
             (px, py)
@@ -102,7 +131,7 @@ impl PlotCache {
         if let Some(fill) = &config.fill {
             if config.value == PlotType::Elevation {
                 let mut pb = PathBuilder::new();
-                let baseline_y = h as f32 - map_value(y_min * 0.99, y_min, y_max, h, margin);
+                let baseline_y = h as f32 - map_value(y_min * 0.99, y_min, y_max, h);
                 if let Some(&(x0, y0)) = pixels.first() {
                     pb.move_to(x0, baseline_y);
                     pb.line_to(x0, y0);
@@ -185,15 +214,16 @@ impl PlotCache {
         scene_color: &TemplateColor,
     ) -> Result<Pixmap> {
         let mut pixmap = self.background.clone();
+        let course_pad = course_padding_px(config);
 
-        let px = map_value(frame_x, self.x_min, self.x_max, self.config_width, config.margin);
+        let px = map_value_with_padding(frame_x, self.x_min, self.x_max, self.config_width, course_pad);
         let py = match config.value {
             PlotType::Course => {
                 self.config_height as f32
-                    - map_value(frame_y, self.y_min, self.y_max, self.config_height, config.margin)
+                    - map_value_with_padding(frame_y, self.y_min, self.y_max, self.config_height, course_pad)
             }
             PlotType::Elevation => {
-                self.config_height as f32 - map_value(frame_y, self.y_min, self.y_max, self.config_height, config.margin)
+                self.config_height as f32 - map_value(frame_y, self.y_min, self.y_max, self.config_height)
             }
         };
 
@@ -213,7 +243,7 @@ impl PlotCache {
             let [r, g, b, _] = dot_color.to_rgba();
             let alpha = (point.opacity * 255.0) as u8;
             // Keep markers visible at high resolutions while preserving weight scaling.
-            let radius = (point.weight / 18.0).sqrt().max(2.0);
+            let radius = point.radius.max(MIN_MARKER_RADIUS_PX);
 
             let mut pb = PathBuilder::new();
             pb.push_circle(px, py, radius);
@@ -275,7 +305,6 @@ mod tests {
             height: 120,
             color: Some(TemplateColor::new("#ff0000")),
             opacity: Some(1.0),
-            margin: 0.1,
             dpi: 72,
             line: LineStyle {
                 width: 2.0,

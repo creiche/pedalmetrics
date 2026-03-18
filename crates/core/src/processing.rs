@@ -172,17 +172,37 @@ pub fn zscore_outlier_replace(data: &[f64], window_size: usize, threshold: f64) 
     for i in 0..data.len() {
         let lo = i.saturating_sub(half);
         let hi = (i + half + 1).min(data.len());
-        let window = &data[lo..hi];
-        let mean = window.iter().copied().sum::<f64>() / window.len() as f64;
-        let std = {
-            let var = window.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / window.len() as f64;
-            var.sqrt()
-        };
+        // Estimate local baseline from neighboring points only.
+        let mut sum = 0.0;
+        let mut count = 0usize;
+        for (idx, &x) in data[lo..hi].iter().enumerate() {
+            if lo + idx == i {
+                continue;
+            }
+            sum += x;
+            count += 1;
+        }
+        if count == 0 {
+            continue;
+        }
+
+        let mean = sum / count as f64;
+        let var = data[lo..hi]
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| lo + *idx != i)
+            .map(|(_, &x)| (x - mean).powi(2))
+            .sum::<f64>()
+            / count as f64;
+        let std = var.sqrt();
+
         if std > 1e-10 {
             let z = (data[i] - mean) / std;
             if z.abs() > threshold {
                 out[i] = mean;
             }
+        } else if (data[i] - mean).abs() > 1e-10 {
+            out[i] = mean;
         }
     }
     out

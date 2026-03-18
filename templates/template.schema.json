@@ -437,10 +437,10 @@
             }
           ]
         },
-        "weight": {
+        "radius": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "default": 50
+          "default": 3.0
         },
         "opacity": {
           "type": "number",
@@ -586,12 +586,6 @@
           "minimum": 0,
           "maximum": 1
         },
-        "margin": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 0.5,
-          "default": 0.1
-        },
         "dpi": {
           "type": "integer",
           "minimum": 1,
@@ -675,12 +669,6 @@
           ],
           "minimum": 0,
           "maximum": 1
-        },
-        "margin": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 0.5,
-          "default": 0.1
         },
         "dpi": {
           "type": "integer",

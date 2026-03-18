@@ -4,7 +4,7 @@ use serde::ser::SerializeMap;
 use std::collections::HashMap;
 use crate::constant::{
     DEFAULT_COLOR, DEFAULT_DPI, DEFAULT_FONT_SIZE, DEFAULT_FPS, DEFAULT_LINE_WIDTH,
-    DEFAULT_MARGIN, DEFAULT_OPACITY, DEFAULT_OVERLAY_FILENAME, DEFAULT_POINT_WEIGHT,
+    DEFAULT_OPACITY, DEFAULT_OVERLAY_FILENAME, DEFAULT_POINT_RADIUS,
 };
 
 // ---------------------------------------------------------------------------
@@ -333,24 +333,25 @@ pub enum ValueLabelPosition {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PointStyle {
     #[serde(default)]
     pub color: Option<Color>,
-    #[serde(default = "default_point_weight")]
-    pub weight: f32,
+    #[serde(default = "default_point_radius")]
+    pub radius: f32,
     #[serde(default = "default_opacity")]
     pub opacity: f32,
     #[serde(default)]
     pub edge_color: Option<Color>,
 }
 
-fn default_point_weight() -> f32 { DEFAULT_POINT_WEIGHT }
+fn default_point_radius() -> f32 { DEFAULT_POINT_RADIUS }
 
 impl Default for PointStyle {
     fn default() -> Self {
         Self {
             color: None,
-            weight: DEFAULT_POINT_WEIGHT,
+            radius: DEFAULT_POINT_RADIUS,
             opacity: DEFAULT_OPACITY,
             edge_color: None,
         }
@@ -425,8 +426,6 @@ pub struct PlotConfig {
     pub color: Option<Color>,
     #[serde(default)]
     pub opacity: Option<f32>,
-    #[serde(default = "default_margin")]
-    pub margin: f64,
     #[serde(default = "default_dpi")]
     pub dpi: u32,
     #[serde(default)]
@@ -454,8 +453,6 @@ struct PlotConfigFields {
     pub color: Option<Color>,
     #[serde(default)]
     pub opacity: Option<f32>,
-    #[serde(default = "default_margin")]
-    pub margin: f64,
     #[serde(default = "default_dpi")]
     pub dpi: u32,
     #[serde(default)]
@@ -479,7 +476,6 @@ impl From<&PlotConfig> for PlotConfigFields {
             height: p.height,
             color: p.color.clone(),
             opacity: p.opacity,
-            margin: p.margin,
             dpi: p.dpi,
             line: p.line.clone(),
             fill: p.fill.clone(),
@@ -500,7 +496,6 @@ impl PlotConfigFields {
             height: self.height,
             color: self.color,
             opacity: self.opacity,
-            margin: self.margin,
             dpi: self.dpi,
             line: self.line,
             fill: self.fill,
@@ -599,7 +594,6 @@ where
     map.end()
 }
 
-fn default_margin() -> f64 { DEFAULT_MARGIN }
 fn default_dpi() -> u32 { DEFAULT_DPI }
 
 // ---------------------------------------------------------------------------
@@ -861,7 +855,6 @@ mod tests {
                         height: 200,
                         color: None,
                         opacity: None,
-                        margin: default_margin(),
                         dpi: default_dpi(),
                         line: LineStyle::default(),
                         fill: None,

@@ -14,37 +14,34 @@
   },
   "labels": [],
   "values": {
-    "speed": { "x": 80, "y": 730, "font_size": 220, "unit": "imperial" },
-    "power": { "x": 80, "y": 1020, "font_size": 220 },
-    "cadence": { "x": 80, "y": 1310, "font_size": 220 },
-    "heart_rate": { "x": 80, "y": 1600, "font_size": 220 }
+    "speed": { "x": 80, "y": 730, "font_size": 220, "unit": "imperial", "value_label": "MPH" },
+    "power": { "x": 80, "y": 1020, "font_size": 220, "value_label": "Watts" },
+    "cadence": { "x": 80, "y": 1310, "font_size": 220, "value_label": "RPM" },
+    "heart_rate": { "x": 80, "y": 1600, "font_size": 220, "value_label": "BPM" }
   },
   "plots": {
     "course": {
-      "x": -64,
-      "y": -87,
+      "x": 50,
+      "y": 50,
       "width": 700,
       "height": 600,
-      "margin": 0.1,
       "color": "#f4f4f4",
-      "line": { "width": 1.75 },
+      "line": { "width": 5 },
       "rotation": 0,
       "points": [
-        { "weight": 150, "opacity": 1.0 },
-        { "weight": 415, "opacity": 0.52, "color": "#f4f4f4" }
+        { "radius": 10.0, "opacity": 1.0 }
       ]
     },
     "elevation": {
-      "x": -1127,
-      "y": 1912,
+      "x": 0,
+      "y": 2055,
       "width": 5745,
       "height": 100,
-      "margin": 0.1,
       "color": "#f4f4f4",
       "rotation": 0,
-      "line": { "width": 2.0 },
-      "fill": { "opacity": 0.65 },
-      "points": [{ "weight": 50, "opacity": 1.0 }]
+      "line": { "width": 5.0 },
+      "fill": { "opacity": 0.65, "color": "#808080" },
+      "points": [{ "radius": 10.0, "opacity": 1.0 }]
     }
   }
 }

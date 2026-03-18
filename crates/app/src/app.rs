@@ -85,7 +85,7 @@ pub struct PedalmetricsApp {
 }
 
 impl PedalmetricsApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, initial_gpx_path: Option<PathBuf>) -> Self {
         // Load available templates
         let available_templates = Self::scan_templates_pub();
 
@@ -101,7 +101,7 @@ impl PedalmetricsApp {
             })
             .unwrap_or_else(Template::default_4k);
 
-        Self {
+        let mut app = Self {
             loaded_activity: None,
             template,
             render_state: None,
@@ -116,7 +116,13 @@ impl PedalmetricsApp {
             available_templates,
             show_template_editor: false,
             status_message: String::new(),
+        };
+
+        if let Some(path) = initial_gpx_path {
+            app.load_gpx(path);
         }
+
+        app
     }
 
     // -----------------------------------------------------------------------
