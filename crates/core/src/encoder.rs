@@ -101,23 +101,30 @@ impl VideoEncoder {
         let mut octx = output(&self.output_path)
             .with_context(|| format!("Cannot open output file: {}", self.output_path.display()))?;
 
-        let codec = encoder::find_by_name("prores_ks")
+        let prores_codec = encoder::find_by_name("prores_ks")
             .context("prores_ks encoder not found — FFmpeg may not have been built with ProRes support")?;
 
-        let mut ost = octx.add_stream(codec)
+        let global_header = octx.format().flags().contains(format::Flags::GLOBAL_HEADER);
+
+        let mut ost = octx.add_stream(prores_codec)
             .context("Failed to add video stream")?;
 
-        let mut enc = codec::context::Context::from_parameters(ost.parameters())
-            .context("Failed to create codec context")?
+        let mut enc = codec::context::Context::new_with_codec(prores_codec)
             .encoder()
             .video()
             .context("Not a video encoder")?;
+
+        ost.set_parameters(&enc);
 
         enc.set_width(width);
         enc.set_height(height);
         enc.set_format(format::Pixel::YUVA444P10LE);
         enc.set_frame_rate(Some(Rational::new(fps as i32, 1)));
         enc.set_time_base(Rational::new(1, fps as i32));
+
+        if global_header {
+            enc.set_flags(codec::Flags::GLOBAL_HEADER);
+        }
 
         // ProRes 4444 profile (profile 4 = 4444, supports alpha)
         let mut opts = Dictionary::new();
