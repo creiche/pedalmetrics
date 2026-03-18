@@ -148,6 +148,12 @@ impl<'a> ControlPanel<'a> {
         ui.add_space(4.0);
 
         let mut changed = false;
+        let full_duration = self
+            .app
+            .loaded_activity
+            .as_ref()
+            .map(|l| l.full_duration_seconds as u32)
+            .unwrap_or(0);
         let scene = &mut self.app.template.scene;
 
         // Resolution preset
@@ -192,6 +198,65 @@ impl<'a> ControlPanel<'a> {
             }
         });
 
+        // Explicit render-range controls (absolute GPX seconds)
+        if full_duration > 0 {
+            ui.add_space(8.0);
+            ui.label("Render Range:");
+
+            let mut start = scene.start.min(full_duration.saturating_sub(1));
+            let mut end = scene.end.min(full_duration).max(start + 1);
+
+            ui.horizontal(|ui| {
+                ui.label("Start:");
+                if ui
+                    .add(egui::DragValue::new(&mut start).range(0..=end.saturating_sub(1)).suffix("s"))
+                    .changed()
+                {
+                    changed = true;
+                }
+
+                ui.label("End:");
+                if ui
+                    .add(egui::DragValue::new(&mut end).range(start + 1..=full_duration).suffix("s"))
+                    .changed()
+                {
+                    changed = true;
+                }
+            });
+
+            let clip_len = end.saturating_sub(start);
+            ui.label(format!(
+                "{} -> {}  (clip: {})",
+                fmt_time(start),
+                fmt_time(end),
+                fmt_time(clip_len)
+            ));
+
+            let playhead_abs = start + self.app.selected_second;
+            ui.horizontal(|ui| {
+                if ui.small_button("Start = Playhead").clicked() {
+                    start = playhead_abs.min(end.saturating_sub(1));
+                    changed = true;
+                }
+                if ui.small_button("End = Playhead").clicked() {
+                    end = playhead_abs.clamp(start + 1, full_duration);
+                    changed = true;
+                }
+                if ui.small_button("Use Full Activity").clicked() {
+                    start = 0;
+                    end = full_duration;
+                    changed = true;
+                }
+            });
+
+            if changed {
+                scene.start = start;
+                scene.end = end;
+                // Keep preview selection relative to new clip start.
+                self.app.selected_second = 0;
+            }
+        }
+
         if changed {
             self.app.render_state_dirty = true;
         }
@@ -227,4 +292,8 @@ impl<'a> ControlPanel<'a> {
             }
         }
     }
+}
+
+fn fmt_time(seconds: u32) -> String {
+    format!("{}:{:02}", seconds / 60, seconds % 60)
 }
