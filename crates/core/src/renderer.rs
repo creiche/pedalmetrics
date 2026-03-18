@@ -3,7 +3,7 @@ use image::imageops::FilterType;
 use image::{ImageBuffer, Rgba, RgbaImage};
 use std::collections::HashMap;
 use std::path::Path;
-use chrono::{TimeZone, Utc};
+use chrono::{TimeZone, Timelike, Utc};
 use std::sync::{Arc, Mutex};
 
 use crate::activity::Activity;
@@ -11,7 +11,7 @@ use crate::constant::{FT_CONVERSION, KMH_CONVERSION, MPH_CONVERSION};
 use crate::plot::{build_plot_data, PlotCache};
 use crate::template::{
     Color, LabelConfig, PlotConfig, PlotType, SceneConfig, Template, UnitSystem, ValueConfig,
-    ValueType,
+    ValueLabelPosition, ValueType,
 };
 
 // ---------------------------------------------------------------------------
@@ -19,6 +19,20 @@ use crate::template::{
 // ---------------------------------------------------------------------------
 
 use fontdue::{Font, FontSettings};
+
+struct RasterizedGlyph {
+    metrics: fontdue::Metrics,
+    bitmap: Vec<u8>,
+    x: i32,
+    y: i32,
+}
+
+struct TextLayout {
+    glyphs: Vec<RasterizedGlyph>,
+    min_x: i32,
+    min_y: i32,
+    height: i32,
+}
 
 pub struct FontCache {
     fonts: HashMap<String, Font>,
@@ -135,17 +149,64 @@ impl RenderState {
         // Draw values (dynamic telemetry text)
         for value_config in &self.template.values {
             let text = format_value(value_config, &self.activity, frame_idx, &self.template.scene);
+            let value_font_size = self.template.value_font_size(value_config);
+            let value_color = self.template.value_color(value_config).clone();
+            let value_opacity = self.template.value_opacity(value_config);
+            let value_font_name = self.template.value_font(value_config);
+            let value_layout = layout_text(
+                font_cache.get_or_load(value_font_name),
+                &text,
+                value_font_size,
+            );
             draw_text(
                 &mut img,
                 &text,
                 value_config.x,
                 value_config.y,
-                self.template.value_font(value_config),
-                self.template.value_font_size(value_config),
-                self.template.value_color(value_config),
-                self.template.value_opacity(value_config),
+                value_font_name,
+                value_font_size,
+                &value_color,
+                value_opacity,
                 &mut font_cache,
             );
+
+            if let Some(label_text) = value_config
+                .value_label
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let label_font_size = (value_font_size * 0.35).max(12.0);
+                let label_gap = (label_font_size * 0.3).max(4.0) as i32;
+                let label_layout = layout_text(
+                    font_cache.get_or_load(value_font_name),
+                    label_text,
+                    label_font_size,
+                );
+                let label_y = match value_config
+                    .value_label_position
+                    .unwrap_or(ValueLabelPosition::Below)
+                {
+                    ValueLabelPosition::Above => {
+                        value_config.y - label_layout.height - label_gap
+                    }
+                    ValueLabelPosition::Below => {
+                        value_config.y + value_layout.height + label_gap
+                    }
+                };
+
+                draw_text(
+                    &mut img,
+                    label_text,
+                    value_config.x,
+                    label_y,
+                    value_font_name,
+                    label_font_size,
+                    &value_color,
+                    value_opacity,
+                    &mut font_cache,
+                );
+            }
         }
 
         // Draw plots with position markers
@@ -209,6 +270,13 @@ impl Renderer {
         self.state.template.scene.height
     }
 
+    pub fn start_timecode_string(&self) -> Option<String> {
+        self.state
+            .activity
+            .time_at(0)
+            .map(|_| format_timecode(&self.state.activity, 0, self.state.template.scene.fps, 0.0))
+    }
+
     /// Consume the Renderer and return the inner RenderState.
     /// Used by the encoder to share state across rayon threads via Arc.
     pub fn into_state(self) -> RenderState {
@@ -233,6 +301,11 @@ fn format_value(
         .unwrap_or(0) as usize;
 
     let converted = match (config.value, config.unit) {
+        (Timecode, _) => {
+            let hours_offset = config.hours_offset.unwrap_or(0.0);
+            let text = format_timecode(activity, frame_idx, scene.fps, hours_offset);
+            return append_suffix(text, config);
+        }
         (Speed, Some(UnitSystem::Imperial)) => raw * MPH_CONVERSION,
         (Speed, Some(UnitSystem::Metric))   => raw * KMH_CONVERSION,
         (Speed, None)                        => raw * MPH_CONVERSION, // default imperial
@@ -267,6 +340,23 @@ fn append_suffix(text: String, config: &ValueConfig) -> String {
     } else {
         text
     }
+}
+
+fn format_timecode(activity: &Activity, frame_idx: usize, fps: u32, hours_offset: f64) -> String {
+    let fps = fps.max(1) as usize;
+    let second = frame_idx / fps;
+    let frame_in_second = frame_idx % fps;
+
+    let dt = activity.time_at(second).unwrap_or_else(Utc::now)
+        + chrono::Duration::seconds((hours_offset * 3600.0) as i64);
+
+    format!(
+        "{:02}:{:02}:{:02}:{:02}",
+        dt.hour(),
+        dt.minute(),
+        dt.second(),
+        frame_in_second,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -327,20 +417,18 @@ fn draw_text(
     let font = font_cache.get_or_load(font_name);
     let [r, g, b, a] = color.to_rgba();
     let color_alpha = (a as f32 / 255.0) * opacity.clamp(0.0, 1.0);
+    let layout = layout_text(font, text, font_size);
+    let x_offset = x - layout.min_x;
+    let y_offset = y - layout.min_y;
 
-    let mut cursor_x = x;
-    for ch in text.chars() {
-        let (metrics, bitmap) = font.rasterize(ch, font_size);
-        let glyph_x = cursor_x + metrics.xmin;
-        let glyph_y = y - metrics.height as i32 - metrics.ymin;
-
-        for row in 0..metrics.height {
-            for col in 0..metrics.width {
-                let alpha = bitmap[row * metrics.width + col];
+    for glyph in layout.glyphs {
+        for row in 0..glyph.metrics.height {
+            for col in 0..glyph.metrics.width {
+                let alpha = glyph.bitmap[row * glyph.metrics.width + col];
                 if alpha == 0 { continue; }
 
-                let px = glyph_x + col as i32;
-                let py = glyph_y + row as i32;
+                let px = x_offset + glyph.x + col as i32;
+                let py = y_offset + glyph.y + row as i32;
 
                 if px < 0 || py < 0 || px >= img.width() as i32 || py >= img.height() as i32 {
                     continue;
@@ -359,7 +447,53 @@ fn draw_text(
                 }
             }
         }
-        cursor_x += metrics.advance_width as i32;
+    }
+}
+
+fn layout_text(font: &Font, text: &str, font_size: f32) -> TextLayout {
+    let mut glyphs = Vec::with_capacity(text.chars().count());
+    let mut cursor_x = 0;
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+
+    for ch in text.chars() {
+        let (metrics, bitmap) = font.rasterize(ch, font_size);
+        let glyph_x = cursor_x + metrics.xmin;
+        let glyph_y = -(metrics.height as i32) - metrics.ymin;
+
+        if metrics.width > 0 && metrics.height > 0 {
+            min_x = min_x.min(glyph_x);
+            min_y = min_y.min(glyph_y);
+            max_x = max_x.max(glyph_x + metrics.width as i32);
+            max_y = max_y.max(glyph_y + metrics.height as i32);
+        }
+
+        glyphs.push(RasterizedGlyph {
+            metrics,
+            bitmap,
+            x: glyph_x,
+            y: glyph_y,
+        });
+
+        cursor_x += glyphs.last().unwrap().metrics.advance_width as i32;
+    }
+
+    if min_x == i32::MAX {
+        TextLayout {
+            glyphs,
+            min_x: 0,
+            min_y: 0,
+            height: 0,
+        }
+    } else {
+        TextLayout {
+            glyphs,
+            min_x,
+            min_y,
+            height: max_y - min_y,
+        }
     }
 }
 
@@ -423,4 +557,184 @@ pub fn rotate_image(img: &RgbaImage, degrees: f32) -> RgbaImage {
     use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
     let angle = degrees.to_radians();
     rotate_about_center(img, angle, Interpolation::Bilinear, Rgba([0, 0, 0, 0]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::template::{LabelConfig, Template, UnitSystem, ValueConfig, ValueLabelPosition, ValueType};
+
+    const SAMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="pedalmetrics-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>sample</name>
+    <trkseg>
+      <trkpt lat="37.0000" lon="-122.0000">
+        <ele>10.0</ele>
+        <time>2024-01-01T00:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.0001" lon="-122.0001">
+        <ele>10.5</ele>
+        <time>2024-01-01T00:00:01Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
+"#;
+
+    fn build_activity() -> Activity {
+        let mut activity = Activity::from_str(SAMPLE_GPX).expect("test GPX should parse");
+        activity.interpolate(1);
+        activity
+    }
+
+    fn render_with_label_position(pos: Option<ValueLabelPosition>) -> RgbaImage {
+        let activity = build_activity();
+
+        let mut template = Template::default_4k();
+        template.scene.width = 800;
+        template.scene.height = 400;
+        template.scene.start = 0;
+        template.scene.end = 1;
+        template.values = vec![ValueConfig {
+            value: ValueType::Speed,
+            x: 120,
+            y: 220,
+            unit: Some(UnitSystem::Imperial),
+            font: None,
+            font_size: Some(72.0),
+            color: None,
+            opacity: None,
+            suffix: None,
+            decimal_rounding: Some(0),
+            hours_offset: None,
+            time_format: None,
+            value_label: Some("LBL".to_string()),
+            value_label_position: pos,
+        }];
+
+        let state = RenderState::build(activity, template, ".")
+            .expect("render state should build");
+        state.render_frame(0).expect("frame should render")
+    }
+
+    fn render_without_label() -> RgbaImage {
+        let activity = build_activity();
+
+        let mut template = Template::default_4k();
+        template.scene.width = 800;
+        template.scene.height = 400;
+        template.scene.start = 0;
+        template.scene.end = 1;
+        template.values = vec![ValueConfig {
+            value: ValueType::Speed,
+            x: 120,
+            y: 220,
+            unit: Some(UnitSystem::Imperial),
+            font: None,
+            font_size: Some(72.0),
+            color: None,
+            opacity: None,
+            suffix: None,
+            decimal_rounding: Some(0),
+            hours_offset: None,
+            time_format: None,
+            value_label: None,
+            value_label_position: None,
+        }];
+
+        let state = RenderState::build(activity, template, ".")
+            .expect("render state should build");
+        state.render_frame(0).expect("frame should render")
+    }
+
+    fn positive_alpha_delta_centroid_y(with_label: &RgbaImage, base: &RgbaImage) -> Option<f32> {
+        let mut weighted_sum = 0.0_f64;
+        let mut total_weight = 0.0_f64;
+
+        for y in 0..with_label.height() {
+            for x in 0..with_label.width() {
+                let a_with = with_label.get_pixel(x, y)[3] as i32;
+                let a_base = base.get_pixel(x, y)[3] as i32;
+                let delta = (a_with - a_base).max(0) as f64;
+                if delta > 0.0 {
+                    weighted_sum += delta * y as f64;
+                    total_weight += delta;
+                }
+            }
+        }
+
+        if total_weight > 0.0 {
+            Some((weighted_sum / total_weight) as f32)
+        } else {
+            None
+        }
+    }
+
+    fn alpha_bounds(img: &RgbaImage) -> Option<(u32, u32, u32, u32)> {
+        let mut min_x = u32::MAX;
+        let mut min_y = u32::MAX;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        let mut found = false;
+
+        for y in 0..img.height() {
+            for x in 0..img.width() {
+                if img.get_pixel(x, y)[3] > 0 {
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                    found = true;
+                }
+            }
+        }
+
+        found.then_some((min_x, min_y, max_x, max_y))
+    }
+
+    #[test]
+    fn label_coordinates_anchor_text_top_left() {
+        let activity = build_activity();
+
+        let mut template = Template::default_4k();
+        template.scene.width = 400;
+        template.scene.height = 300;
+        template.scene.start = 0;
+        template.scene.end = 1;
+        template.labels = vec![LabelConfig {
+            text: "88".to_string(),
+            x: 120,
+            y: 140,
+            font: None,
+            font_size: Some(72.0),
+            color: None,
+            opacity: None,
+        }];
+
+        let state = RenderState::build(activity, template, ".")
+            .expect("render state should build");
+        let frame = state.render_frame(0).expect("frame should render");
+        let (min_x, min_y, _, _) = alpha_bounds(&frame).expect("label should render visible pixels");
+
+        assert_eq!(min_x, 120);
+        assert_eq!(min_y, 140);
+    }
+
+    #[test]
+    fn attached_label_renders_above_or_below_value_anchor() {
+        let base = render_without_label();
+        let above = render_with_label_position(Some(ValueLabelPosition::Above));
+        let below = render_with_label_position(Some(ValueLabelPosition::Below));
+
+        let above_centroid = positive_alpha_delta_centroid_y(&above, &base)
+            .expect("above label should produce additional pixels");
+        let below_centroid = positive_alpha_delta_centroid_y(&below, &base)
+            .expect("below label should produce additional pixels");
+
+        let value_anchor_y = 220.0_f32;
+        assert!(above_centroid < value_anchor_y - 5.0);
+        assert!(below_centroid > value_anchor_y + 5.0);
+        assert!(below_centroid > above_centroid + 20.0);
+    }
 }

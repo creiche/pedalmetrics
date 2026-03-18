@@ -4,10 +4,11 @@ use rfd::FileDialog;
 
 use crate::app::PedalmetricsApp;
 use pedalmetrics_core::Template;
+use pedalmetrics_core::constant::templates_dir;
 
 /// Bundled template files (compiled into the binary).
 const BUNDLED_TEMPLATES: &[(&str, &str)] = &[
-    ("Walker Crit A", include_str!("../../../../templates/walker_crit_a.json")),
+    ("Init Template", include_str!("../../../../templates/init_template.json")),
 ];
 
 pub struct ControlPanel<'a> {
@@ -104,17 +105,55 @@ impl<'a> ControlPanel<'a> {
 
         ui.add_space(4.0);
 
-        // Save template
-        if ui.button("💾 Save Template…").clicked() {
+        // Save template to user templates directory (Documents/Pedalmetrics/templates).
+        if ui.button("💾 Save Template").clicked() {
+            match self.app.save_current_template() {
+                Ok(path) => {
+                    self.app.status_message = format!("Saved: {}", path.display());
+                }
+                Err(e) => {
+                    self.app.status_message = format!("Template save failed: {}", e);
+                }
+            }
+        }
+
+        if ui.button("📂 Load Template…").clicked() {
             if let Some(path) = FileDialog::new()
+                .set_directory(templates_dir())
+                .add_filter("JSON", &["json"])
+                .pick_file()
+            {
+                match self.app.load_template_from_path(path.clone()) {
+                    Ok(()) => {
+                        self.app.status_message = format!("Loaded: {}", path.display());
+                    }
+                    Err(e) => {
+                        self.app.status_message = format!("Template load failed: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Optional Save As for exporting elsewhere.
+        if ui.button("💾 Save Template As…").clicked() {
+            if let Some(path) = FileDialog::new()
+                .set_directory(templates_dir())
                 .set_file_name("my_template.json")
                 .add_filter("JSON", &["json"])
                 .save_file()
             {
-                if let Ok(json) = self.app.template.to_json_pretty() {
-                    let _ = std::fs::write(&path, json);
-                    self.app.status_message = format!("Saved: {}", path.display());
-                    self.app.available_templates = PedalmetricsApp::scan_templates_pub();
+                match self.app.template.to_json_pretty() {
+                    Ok(json) => {
+                        if std::fs::write(&path, json).is_ok() {
+                            self.app.status_message = format!("Saved: {}", path.display());
+                            self.app.available_templates = PedalmetricsApp::scan_templates_pub();
+                        } else {
+                            self.app.status_message = format!("Template save failed: {}", path.display());
+                        }
+                    }
+                    Err(e) => {
+                        self.app.status_message = format!("Template serialize failed: {}", e);
+                    }
                 }
             }
         }
@@ -233,6 +272,7 @@ impl<'a> ControlPanel<'a> {
             ));
 
             let playhead_abs = start + self.app.selected_second;
+            ui.label(format!("Playhead: {} ({}s)", fmt_time(playhead_abs), playhead_abs));
             ui.horizontal(|ui| {
                 if ui.small_button("Start = Playhead").clicked() {
                     start = playhead_abs.min(end.saturating_sub(1));
@@ -275,7 +315,20 @@ impl<'a> ControlPanel<'a> {
             && self.app.video_render.as_ref().map_or(true, |r| r.thread.is_none());
 
         if ui.add_enabled(can_render, egui::Button::new("▶ Render Video")).clicked() {
-            self.app.start_video_render();
+            let default_name = self.app.template.scene.overlay_filename.clone();
+            if let Some(mut path) = FileDialog::new()
+                .set_title("Save Rendered Video")
+                .add_filter("QuickTime Movie", &["mov"])
+                .set_file_name(&default_name)
+                .save_file()
+            {
+                if path.extension().is_none() {
+                    path.set_extension("mov");
+                }
+                self.app.start_video_render_to(path);
+            } else {
+                self.app.status_message = "Render cancelled".to_string();
+            }
         }
 
         if let Some(vr) = &self.app.video_render {

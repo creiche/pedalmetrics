@@ -24,6 +24,11 @@ pub fn app_support_dir() -> std::path::PathBuf {
 
 /// Returns the templates directory (user-editable).
 pub fn templates_dir() -> std::path::PathBuf {
+    // Prefer a user-visible location so templates are easy to find/share.
+    // macOS: ~/Documents/Pedalmetrics/templates
+    if let Some(documents) = dirs::document_dir() {
+        return documents.join("Pedalmetrics").join("templates");
+    }
     app_support_dir().join("templates")
 }
 

@@ -1,4 +1,5 @@
 {
+  "$schema": "./template.schema.json",
   "scene": {
     "width": 3840,
     "height": 2160,
@@ -9,24 +10,17 @@
     "font_size": 30,
     "color": "#ffffff",
     "opacity": 0.5,
-    "decimal_rounding": 0,
-    "overlay_filename": "walker_crit_a_overlay.mov"
+    "decimal_rounding": 0
   },
-  "labels": [
-    { "text": "MPH", "x": 100, "y": 700, "font_size": 60 },
-    { "text": "PWR", "x": 100, "y": 990, "font_size": 60 },
-    { "text": "RPM", "x": 100, "y": 1280, "font_size": 60 },
-    { "text": "BPM", "x": 100, "y": 1570, "font_size": 60 }
-  ],
-  "values": [
-    { "value": "speed", "x": 80, "y": 730, "font_size": 220, "unit": "imperial" },
-    { "value": "power", "x": 80, "y": 1020, "font_size": 220 },
-    { "value": "cadence", "x": 80, "y": 1310, "font_size": 220 },
-    { "value": "heart_rate", "x": 80, "y": 1600, "font_size": 220 }
-  ],
-  "plots": [
-    {
-      "value": "course",
+  "labels": [],
+  "values": {
+    "speed": { "x": 80, "y": 730, "font_size": 220, "unit": "imperial" },
+    "power": { "x": 80, "y": 1020, "font_size": 220 },
+    "cadence": { "x": 80, "y": 1310, "font_size": 220 },
+    "heart_rate": { "x": 80, "y": 1600, "font_size": 220 }
+  },
+  "plots": {
+    "course": {
       "x": -64,
       "y": -87,
       "width": 700,
@@ -40,8 +34,7 @@
         { "weight": 415, "opacity": 0.52, "color": "#f4f4f4" }
       ]
     },
-    {
-      "value": "elevation",
+    "elevation": {
       "x": -1127,
       "y": 1912,
       "width": 5745,
@@ -53,5 +46,5 @@
       "fill": { "opacity": 0.65 },
       "points": [{ "weight": 50, "opacity": 1.0 }]
     }
-  ]
+  }
 }

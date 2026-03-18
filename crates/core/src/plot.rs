@@ -72,7 +72,12 @@ impl PlotCache {
         // Transparent background
         pixmap.fill(Color::TRANSPARENT);
 
-        let line_color = config.line.color.as_ref().unwrap_or(scene_color);
+        let line_color = config
+            .line
+            .color
+            .as_ref()
+            .or(config.color.as_ref())
+            .unwrap_or(scene_color);
         let line_alpha = config.opacity.unwrap_or(1.0);
         let line_rgba_w_alpha = line_color.to_rgba_with_opacity(line_alpha);
 
@@ -83,7 +88,7 @@ impl PlotCache {
             let py = match config.value {
                 PlotType::Course => {
                     // Flip y-axis: higher latitude = higher on screen
-                    map_value(y_max - (y - y_min), 0.0, y_max - y_min, h, margin)
+                    h as f32 - map_value(y, y_min, y_max, h, margin)
                 }
                 PlotType::Elevation => {
                     // Flip y-axis: higher elevation = higher on screen
@@ -184,7 +189,8 @@ impl PlotCache {
         let px = map_value(frame_x, self.x_min, self.x_max, self.config_width, config.margin);
         let py = match config.value {
             PlotType::Course => {
-                map_value(self.y_max - (frame_y - self.y_min), 0.0, self.y_max - self.y_min, self.config_height, config.margin)
+                self.config_height as f32
+                    - map_value(frame_y, self.y_min, self.y_max, self.config_height, config.margin)
             }
             PlotType::Elevation => {
                 self.config_height as f32 - map_value(frame_y, self.y_min, self.y_max, self.config_height, config.margin)
@@ -199,10 +205,15 @@ impl PlotCache {
         };
 
         for point in &points {
-            let dot_color = point.color.as_ref().unwrap_or(scene_color);
+            let dot_color = point
+                .color
+                .as_ref()
+                .or(config.color.as_ref())
+                .unwrap_or(scene_color);
             let [r, g, b, _] = dot_color.to_rgba();
             let alpha = (point.opacity * 255.0) as u8;
-            let radius = (point.weight / 10.0).sqrt().max(1.0);
+            // Keep markers visible at high resolutions while preserving weight scaling.
+            let radius = (point.weight / 18.0).sqrt().max(2.0);
 
             let mut pb = PathBuilder::new();
             pb.push_circle(px, py, radius);
@@ -247,5 +258,55 @@ pub fn build_plot_data(
             let y = activity.elevation.clone();
             (x, y)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::template::{LineStyle, PlotConfig};
+
+    fn course_plot_config() -> PlotConfig {
+        PlotConfig {
+            value: PlotType::Course,
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 120,
+            color: Some(TemplateColor::new("#ff0000")),
+            opacity: Some(1.0),
+            margin: 0.1,
+            dpi: 72,
+            line: LineStyle {
+                width: 2.0,
+                color: None,
+            },
+            fill: None,
+            rotation: 0.0,
+            points: vec![],
+            point_label: None,
+        }
+    }
+
+    #[test]
+    fn test_plot_color_fallback_applies_to_course_line() {
+        let mut red_cfg = course_plot_config();
+        red_cfg.color = Some(TemplateColor::new("#ff0000"));
+        let mut green_cfg = course_plot_config();
+        green_cfg.color = Some(TemplateColor::new("#00ff00"));
+
+        let x_data = vec![-82.10, -82.09, -82.08, -82.07];
+        let y_data = vec![29.10, 29.11, 29.115, 29.12];
+        let scene_color = TemplateColor::new("#0000ff");
+
+        let red_cache = PlotCache::build(&red_cfg, x_data.clone(), y_data.clone(), &scene_color)
+            .expect("red plot cache should build");
+        let green_cache = PlotCache::build(&green_cfg, x_data, y_data, &scene_color)
+            .expect("green plot cache should build");
+
+        assert!(
+            red_cache.background.data() != green_cache.background.data(),
+            "expected plot.color to influence line rendering when line.color is unset"
+        );
     }
 }

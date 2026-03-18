@@ -39,15 +39,6 @@ impl<'a> OnboardingState<'a> {
                         .small()
                         .color(egui::Color32::GRAY)
                 );
-
-                ui.add_space(48.0);
-                ui.label(
-                    egui::RichText::new(
-                        "An independent Rust rewrite inspired by Cyclemetry.\nNot affiliated with or maintained by the original authors."
-                    )
-                    .small()
-                    .color(egui::Color32::from_gray(100))
-                );
             });
         });
 

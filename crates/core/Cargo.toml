@@ -21,7 +21,11 @@ rayon = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
+libc = { workspace = true }
 
 [build-dependencies]
 # ffmpeg-next needs pkg-config to find the libraries at build time
 pkg-config = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

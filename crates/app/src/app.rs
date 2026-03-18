@@ -10,7 +10,7 @@ use pedalmetrics_core::{
     Activity, Template,
     encoder::{RenderProgress, VideoEncoder},
     renderer::{RenderState, Renderer},
-    constant::{downloads_dir, fonts_dir, templates_dir},
+    constant::{fonts_dir, templates_dir},
 };
 
 use crate::ui::{
@@ -128,6 +128,7 @@ impl PedalmetricsApp {
 
         // User templates dir
         let user_dir = templates_dir();
+        let _ = std::fs::create_dir_all(&user_dir);
         if let Ok(entries) = std::fs::read_dir(&user_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -147,8 +148,60 @@ impl PedalmetricsApp {
         templates
     }
 
+    fn sanitize_template_name(name: &str) -> String {
+        let mut out = String::with_capacity(name.len());
+        for ch in name.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                out.push(ch);
+            } else if ch == ' ' {
+                out.push('_');
+            }
+        }
+        let out = out.trim_matches('_').to_string();
+        if out.is_empty() { "template".to_string() } else { out }
+    }
+
+    pub fn save_current_template_to_dir(&mut self, dir: &std::path::Path) -> anyhow::Result<PathBuf> {
+        std::fs::create_dir_all(dir)?;
+
+        let base = self
+            .template
+            .scene
+            .overlay_filename
+            .strip_suffix(".mov")
+            .unwrap_or("template");
+        let base = Self::sanitize_template_name(base);
+
+        let mut path = dir.join(format!("{}.json", base));
+        if path.exists() {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            path = dir.join(format!("{}_{}.json", base, ts));
+        }
+
+        let json = self.template.to_json_pretty()?;
+        std::fs::write(&path, json)?;
+        Ok(path)
+    }
+
+    pub fn save_current_template(&mut self) -> anyhow::Result<PathBuf> {
+        let path = self.save_current_template_to_dir(&templates_dir())?;
+        self.available_templates = Self::scan_templates_pub();
+        Ok(path)
+    }
+
+    pub fn load_template_from_path(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let json = std::fs::read_to_string(&path)?;
+        let t = Template::from_json(&json)?;
+        self.on_template_change(t);
+        self.available_templates = Self::scan_templates_pub();
+        Ok(())
+    }
+
     fn bundled_default_template() -> Option<Template> {
-        Template::from_json(include_str!("../../../templates/walker_crit_a.json")).ok()
+        Template::from_json(include_str!("../../../templates/init_template.json")).ok()
     }
 
     /// Returns an effective `[start, end)` range in absolute seconds, clamped to activity length.
@@ -303,7 +356,7 @@ impl PedalmetricsApp {
     // Video render
     // -----------------------------------------------------------------------
 
-    pub fn start_video_render(&mut self) {
+    pub fn start_video_render_to(&mut self, output_path: PathBuf) {
         let Some(_loaded) = &self.loaded_activity else { return; };
         let Some(state) = &self.render_state else { return; };
 
@@ -311,8 +364,6 @@ impl PedalmetricsApp {
         let progress = RenderProgress::new(total);
         let state = Arc::clone(state);
         let template = self.template.clone();
-        let output_path = downloads_dir()
-            .join(&template.scene.overlay_filename);
 
         let fps = template.scene.fps;
         let width = template.scene.width;
@@ -409,3 +460,74 @@ impl eframe::App for PedalmetricsApp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+
+    fn app_with_template(template: Template) -> PedalmetricsApp {
+        PedalmetricsApp {
+            loaded_activity: None,
+            template,
+            render_state: None,
+            render_state_dirty: false,
+            selected_second: 0,
+            scrubbing: false,
+            preview_texture: None,
+            preview_pending: Arc::new(Mutex::new(None)),
+            preview_request: Arc::new(Mutex::new(None)),
+            preview_thread_running: Arc::new(AtomicBool::new(false)),
+            video_render: None,
+            available_templates: Vec::new(),
+            show_template_editor: false,
+            status_message: String::new(),
+        }
+    }
+
+    #[test]
+    fn save_current_template_to_dir_writes_template_json() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let mut template = Template::default_4k();
+        template.scene.overlay_filename = "my custom overlay.mov".to_string();
+
+        let mut app = app_with_template(template.clone());
+        let path = app
+            .save_current_template_to_dir(temp_dir.path())
+            .expect("save template to temp dir");
+
+        assert!(path.exists(), "saved template file should exist");
+        let json = std::fs::read_to_string(&path).expect("read saved template");
+        let roundtrip = Template::from_json(&json).expect("parse saved template");
+        assert_eq!(roundtrip.scene.overlay_filename, template.scene.overlay_filename);
+        assert_eq!(roundtrip.scene.width, template.scene.width);
+        assert_eq!(roundtrip.scene.height, template.scene.height);
+        assert_eq!(roundtrip.scene.fps, template.scene.fps);
+    }
+
+    #[test]
+    fn load_template_from_path_updates_template_state() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+
+        let mut original = Template::default_4k();
+        original.scene.overlay_filename = "loader test.mov".to_string();
+        original.scene.width = 1280;
+        original.scene.height = 720;
+        original.scene.fps = 24;
+
+        let mut app = app_with_template(original.clone());
+        let path = app
+            .save_current_template_to_dir(temp_dir.path())
+            .expect("save source template");
+
+        app.template = Template::default_4k();
+        app.load_template_from_path(path).expect("load template from path");
+
+        assert_eq!(app.template.scene.overlay_filename, original.scene.overlay_filename);
+        assert_eq!(app.template.scene.width, 1280);
+        assert_eq!(app.template.scene.height, 720);
+        assert_eq!(app.template.scene.fps, 24);
+    }
+}
+

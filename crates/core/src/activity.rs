@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use chrono::{DateTime, Utc};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::gradient::{smooth_gradients, elevation_angle};
 use crate::processing::{interpolate_channel, savgol_filter};
@@ -58,24 +57,20 @@ impl Activity {
     /// Parse a `.gpx` file from disk into an Activity.
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let file = File::open(path)
-            .with_context(|| format!("Cannot open GPX file: {}", path.display()))?;
-        let reader = BufReader::new(file);
-
-        let gpx_data = gpx::read(reader)
-            .with_context(|| format!("Failed to parse GPX file: {}", path.display()))?;
-
-        Self::from_gpx(gpx_data)
+        let gpx_str = std::fs::read_to_string(path)
+            .with_context(|| format!("Cannot read GPX file: {}", path.display()))?;
+        Self::from_str(&gpx_str)
     }
 
     /// Parse from an in-memory GPX string.
     pub fn from_str(gpx_str: &str) -> Result<Self> {
         let cursor = std::io::Cursor::new(gpx_str.as_bytes());
         let gpx_data = gpx::read(cursor).context("Failed to parse GPX content")?;
-        Self::from_gpx(gpx_data)
+        let extension_points = parse_trackpoint_extensions(gpx_str);
+        Self::from_gpx(gpx_data, Some(extension_points))
     }
 
-    fn from_gpx(gpx_data: gpx::Gpx) -> Result<Self> {
+    fn from_gpx(gpx_data: gpx::Gpx, extension_points: Option<Vec<TrackPointExtensions>>) -> Result<Self> {
         let track = gpx_data.tracks.into_iter().next()
             .context("GPX file contains no tracks")?;
         let segment = track.segments.into_iter().next()
@@ -138,14 +133,18 @@ impl Activity {
             };
             gradient_raw.push(grad);
 
-            // Extensions: parse Garmin TrackPointExtension namespaced fields
-            let exts = parse_extensions(&pt.comment); // comment field used as raw XML fallback
-            let (hr, cad, pwr, temp) = parse_garmin_extensions(pt);
+            // Extensions: parse Garmin TrackPointExtension values (HR/cadence/power/temp)
+            let ext = extension_points
+                .as_ref()
+                .and_then(|values| values.get(i));
+            let (hr, cad, pwr, temp) = match ext {
+                Some(v) => (v.hr, v.cad, v.power, v.temp),
+                None => (None, None, None, None),
+            };
             heart_rate_raw.push(hr);
             cadence_raw.push(cad);
             power_raw.push(pwr);
             temperature_raw.push(temp);
-            let _ = exts; // reserved for future use
 
             prev_point = Some(pt);
         }
@@ -162,6 +161,7 @@ impl Activity {
             ValueType::Elevation,
             ValueType::Gradient,
             ValueType::Time,
+            ValueType::Timecode,
         ];
 
         let has_hr = heart_rate_raw.iter().any(|v| v.is_some());
@@ -275,6 +275,14 @@ impl Activity {
                     .map(|t| t.timestamp() as f64)
                     .unwrap_or(0.0)
             }
+            ValueType::Timecode    => {
+                // Same base timestamp as Time; formatter adds frame component.
+                let fps = self.fps as usize;
+                let sec = if fps > 0 { frame_idx / fps } else { frame_idx };
+                self.times.get(sec)
+                    .map(|t| t.timestamp() as f64)
+                    .unwrap_or(0.0)
+            }
         }
     }
 
@@ -320,31 +328,111 @@ pub fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 // Garmin extension parsing
 // ---------------------------------------------------------------------------
 
-/// Attempt to parse Garmin TrackPointExtension fields from a waypoint.
-/// Returns (heart_rate, cadence, power, temperature).
-fn parse_garmin_extensions(pt: &gpx::Waypoint) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
-    // The `gpx` crate exposes extensions as raw XML strings in some versions.
-    // We look for common Garmin patterns.
-    let hr: Option<f64> = None;
-    let cad: Option<f64> = None;
-    let pwr: Option<f64> = None;
-    let temp: Option<f64> = None;
-
-    // gpx crate >= 0.10 may expose speed and heartrate directly on Waypoint
-    if let Some(spd) = pt.speed {
-        // already using computed speed, ignore
-        let _ = spd;
-    }
-
-    // Parse from the comment/description field fallback if extensions aren't
-    // directly accessible via the gpx crate's typed API.
-    // Real extension parsing is done via quick-xml in a pre-pass (see parse_extensions_xml).
-    // This function returns None for all until quick-xml integration is wired in.
-    (hr, cad, pwr, temp)
+#[derive(Debug, Clone, Copy, Default)]
+struct TrackPointExtensions {
+    hr: Option<f64>,
+    cad: Option<f64>,
+    power: Option<f64>,
+    temp: Option<f64>,
 }
 
-/// Placeholder for raw XML extension parsing via quick-xml.
-/// Will be implemented to parse `<gpxtpx:TrackPointExtension>` nodes.
-fn parse_extensions(_raw: &Option<String>) -> HashMap<String, f64> {
-    HashMap::new()
+fn parse_trackpoint_extensions(gpx_xml: &str) -> Vec<TrackPointExtensions> {
+    fn local_name(name: &[u8]) -> &[u8] {
+        match name.iter().rposition(|b| *b == b':') {
+            Some(idx) => &name[idx + 1..],
+            None => name,
+        }
+    }
+
+    fn parse_number(text: &[u8]) -> Option<f64> {
+        std::str::from_utf8(text).ok()?.trim().parse::<f64>().ok()
+    }
+
+    let mut reader = Reader::from_str(gpx_xml);
+    reader.config_mut().trim_text(true);
+
+    let mut points = Vec::new();
+    let mut current = TrackPointExtensions::default();
+    let mut current_tag: Option<Vec<u8>> = None;
+    let mut in_trkpt = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                let tag = local_name(e.name().as_ref()).to_vec();
+                if tag.as_slice() == b"trkpt" {
+                    in_trkpt = true;
+                    current = TrackPointExtensions::default();
+                    current_tag = None;
+                } else if in_trkpt {
+                    current_tag = Some(tag);
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if !in_trkpt {
+                    continue;
+                }
+                let Some(tag) = current_tag.as_deref() else {
+                    continue;
+                };
+                let Some(value) = parse_number(e.as_ref()) else {
+                    continue;
+                };
+
+                match tag {
+                    b"hr" => current.hr = Some(value),
+                    b"cad" | b"cadence" => current.cad = Some(value),
+                    b"power" | b"pwr" | b"watts" => current.power = Some(value),
+                    b"atemp" | b"temp" | b"temperature" => current.temp = Some(value),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let tag = local_name(e.name().as_ref()).to_vec();
+                if tag.as_slice() == b"trkpt" {
+                    points.push(current);
+                    in_trkpt = false;
+                    current_tag = None;
+                } else if in_trkpt {
+                    if current_tag.as_deref() == Some(tag.as_slice()) {
+                        current_tag = None;
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    points
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::template::ValueType;
+
+    #[test]
+    fn test_parse_trackpoint_extensions_from_fixture() {
+        let gpx = include_str!("../tests/fixtures/sample_30s.gpx");
+        let points = parse_trackpoint_extensions(gpx);
+        assert_eq!(points.len(), 31, "expected one extension record per trackpoint");
+
+        assert!(points[0].hr.is_some());
+        assert!(points[0].cad.is_some());
+        assert!(points[0].power.is_some());
+        assert!(points[0].temp.is_some());
+    }
+
+    #[test]
+    fn test_activity_detects_extension_attributes() {
+        let gpx = include_str!("../tests/fixtures/sample_30s.gpx");
+        let activity = Activity::from_str(gpx).expect("fixture should parse");
+
+        assert!(activity.valid_attributes.contains(&ValueType::HeartRate));
+        assert!(activity.valid_attributes.contains(&ValueType::Cadence));
+        assert!(activity.valid_attributes.contains(&ValueType::Power));
+        assert!(activity.valid_attributes.contains(&ValueType::Temperature));
+    }
 }

@@ -3,6 +3,72 @@ use egui::Ui;
 
 use crate::app::PedalmetricsApp;
 
+const TIMELINE_HEIGHT: f32 = 64.0;
+const PREVIEW_GAP: f32 = 4.0;
+const MIN_PREVIEW_HEIGHT: f32 = 80.0;
+
+fn preview_matte_color() -> egui::Color32 {
+    // Distinct from typical black video content so frame bounds are always visible.
+    egui::Color32::from_rgb(28, 34, 42)
+}
+
+fn preview_frame_stroke() -> egui::Stroke {
+    egui::Stroke::new(1.0, egui::Color32::from_rgb(148, 160, 174))
+}
+
+fn draw_alpha_checkerboard(ui: &mut Ui, rect: egui::Rect) {
+    let light = egui::Color32::from_rgb(64, 72, 84);
+    let dark = egui::Color32::from_rgb(44, 52, 64);
+    let cell = 20.0;
+
+    let cols = ((rect.width() / cell).ceil() as i32).max(1);
+    let rows = ((rect.height() / cell).ceil() as i32).max(1);
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = rect.left() + col as f32 * cell;
+            let y = rect.top() + row as f32 * cell;
+            let r = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(cell, cell)).intersect(rect);
+            let color = if (row + col) % 2 == 0 { light } else { dark };
+            ui.painter().rect_filled(r, 0.0, color);
+        }
+    }
+}
+
+fn fitted_size_for_aspect(container: egui::Vec2, aspect: f32) -> egui::Vec2 {
+    let mut size = container;
+    if aspect <= 0.0 {
+        return size;
+    }
+    if (size.x / size.y) > aspect {
+        size.x = size.y * aspect;
+    } else {
+        size.y = size.x / aspect;
+    }
+    size
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreviewLayout {
+    preview_size: egui::Vec2,
+    timeline_height: f32,
+    gap: f32,
+}
+
+fn compute_preview_layout(available: egui::Vec2, scene_aspect: f32) -> PreviewLayout {
+    let max_preview_size = egui::vec2(
+        available.x,
+        (available.y - TIMELINE_HEIGHT - PREVIEW_GAP).max(MIN_PREVIEW_HEIGHT),
+    );
+    let preview_size = fitted_size_for_aspect(max_preview_size, scene_aspect);
+
+    PreviewLayout {
+        preview_size,
+        timeline_height: TIMELINE_HEIGHT,
+        gap: PREVIEW_GAP,
+    }
+}
+
 pub struct PreviewPanel<'a> {
     app: &'a mut PedalmetricsApp,
 }
@@ -14,32 +80,42 @@ impl<'a> PreviewPanel<'a> {
 
     pub fn show(&mut self, ui: &mut Ui) {
         let available = ui.available_size();
+        let scene_w = self.app.template.scene.width.max(1) as f32;
+        let scene_h = self.app.template.scene.height.max(1) as f32;
+        let scene_aspect = scene_w / scene_h;
+        let layout = compute_preview_layout(available, scene_aspect);
+        let preview_size = layout.preview_size;
 
-        egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
-            ui.set_min_size(available);
+        // Use full panel width for layout, but only allocate the exact fitted preview height.
+        ui.allocate_ui(egui::vec2(available.x, preview_size.y), |ui| {
+            ui.set_min_size(egui::vec2(available.x, preview_size.y));
 
-            // Preview image
-            if let Some(texture) = &self.app.preview_texture {
-                let img_size = texture.size_vec2();
-                // Scale to fit the available area while maintaining aspect ratio
-                let scale = (available.x / img_size.x).min(available.y / img_size.y).min(1.0);
-                let display_size = img_size * scale;
+            ui.centered_and_justified(|ui| {
+                let (rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::hover());
+                ui.painter().rect_filled(rect, 0.0, preview_matte_color());
+                draw_alpha_checkerboard(ui, rect.shrink(1.0));
+                ui.painter().rect_stroke(
+                    rect,
+                    0.0,
+                    preview_frame_stroke(),
+                    egui::StrokeKind::Inside,
+                );
 
-                ui.centered_and_justified(|ui| {
-                    ui.add(egui::Image::new(texture).fit_to_exact_size(display_size));
-                });
-            } else {
-                // Loading spinner
-                ui.centered_and_justified(|ui| {
-                    ui.spinner();
-                    ui.label("Generating preview…");
-                });
-            }
+                if let Some(texture) = &self.app.preview_texture {
+                    ui.put(rect, egui::Image::new(texture).fit_to_exact_size(preview_size));
+                } else {
+                    ui.put(
+                        rect,
+                        egui::Label::new(egui::RichText::new("Generating preview…").color(egui::Color32::WHITE)),
+                    );
+                }
+            });
         });
 
-        // Timeline scrubber below the preview
-        ui.add_space(8.0);
-        self.show_timeline(ui);
+        ui.add_space(layout.gap);
+        ui.allocate_ui(egui::vec2(available.x, layout.timeline_height), |ui| {
+            self.show_timeline(ui);
+        });
     }
 
     fn show_timeline(&mut self, ui: &mut Ui) {
@@ -48,8 +124,12 @@ impl<'a> PreviewPanel<'a> {
         if clip_duration == 0 { return; }
 
         let mut selected = self.app.selected_second.min(clip_duration.saturating_sub(1));
+        let playhead_abs = start + selected;
 
         ui.horizontal(|ui| {
+            ui.strong("Playhead:");
+            ui.label(format!("{} (abs {})", fmt_time(playhead_abs), playhead_abs));
+            ui.separator();
             ui.label(format!("{}", fmt_time(start)));
 
             let resp = ui.add(
@@ -112,4 +192,67 @@ impl<'a> PreviewPanel<'a> {
 
 fn fmt_time(seconds: u32) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_preview_matte_is_not_black() {
+        let c = preview_matte_color();
+        assert_ne!(c, egui::Color32::BLACK);
+        assert!(c.r() > 0 || c.g() > 0 || c.b() > 0);
+    }
+
+    #[test]
+    fn test_fitted_size_preserves_aspect() {
+        let container = egui::vec2(1000.0, 500.0);
+        let aspect = 16.0 / 9.0;
+        let fitted = fitted_size_for_aspect(container, aspect);
+        let ratio = fitted.x / fitted.y;
+        assert!((ratio - aspect).abs() < 0.01);
+        assert!(fitted.x <= container.x + f32::EPSILON);
+        assert!(fitted.y <= container.y + f32::EPSILON);
+    }
+
+    #[test]
+    fn test_fitted_size_handles_tall_container() {
+        let container = egui::vec2(600.0, 1200.0);
+        let aspect = 16.0 / 9.0;
+        let fitted = fitted_size_for_aspect(container, aspect);
+        assert!((fitted.x - 600.0).abs() < 0.01);
+        assert!((fitted.y - (600.0 / aspect)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_preview_layout_width_limited() {
+        let available = egui::vec2(1400.0, 900.0);
+        let aspect = 16.0 / 9.0;
+        let layout = compute_preview_layout(available, aspect);
+
+        assert!((layout.preview_size.x - 1400.0).abs() < 0.01);
+        assert!((layout.preview_size.y - (1400.0 / aspect)).abs() < 0.01);
+        assert!(layout.preview_size.y + layout.timeline_height + layout.gap <= available.y + 0.01);
+    }
+
+    #[test]
+    fn test_compute_preview_layout_height_limited() {
+        let available = egui::vec2(2200.0, 700.0);
+        let aspect = 16.0 / 9.0;
+        let layout = compute_preview_layout(available, aspect);
+
+        let expected_h = available.y - TIMELINE_HEIGHT - PREVIEW_GAP;
+        assert!((layout.preview_size.y - expected_h).abs() < 0.01);
+        assert!((layout.preview_size.x - (expected_h * aspect)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_preview_layout_non_positive_aspect_fallback() {
+        let available = egui::vec2(1000.0, 600.0);
+        let layout = compute_preview_layout(available, 0.0);
+        let expected_h = available.y - TIMELINE_HEIGHT - PREVIEW_GAP;
+        assert!((layout.preview_size.x - available.x).abs() < 0.01);
+        assert!((layout.preview_size.y - expected_h).abs() < 0.01);
+    }
 }
