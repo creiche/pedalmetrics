@@ -24,3 +24,17 @@ image = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+
+[package.metadata.bundle]
+name = "Pedalmetrics"
+identifier = "io.github.creiche.pedalmetrics"
+icon = ["../../assets/icon.icns"]
+version = "0.1.0"
+short_description = "Pedalmetrics macOS GUI app"
+long_description = "Pedalmetrics is a native macOS application for cycling analytics."
+copyright = "Copyright © 2026 Pedalmetrics Authors"
+category = "public.app-category.sports"
+osx_minimum_system_version = "10.13"
+resources = []
+bundle_identifier = "io.github.creiche.pedalmetrics"
