@@ -8,7 +8,7 @@ on:
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust
@@ -20,6 +20,8 @@ jobs:
         run: |
           rustup component add llvm-tools-preview
           cargo install cargo-llvm-cov
+      - name: Install FFmpeg (macOS)
+        run: brew install ffmpeg
       - name: Run coverage (exclude UI)
         run: |
           cargo llvm-cov --workspace --ignore-filename-regex='crates/.*/src/ui/' --lcov --output-path lcov.info
