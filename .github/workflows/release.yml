@@ -9,12 +9,24 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
+      - name: Cache cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - uses: actions/checkout@v6
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
+      - name: Install FFmpeg and pkg-config (macOS)
+        run: brew install ffmpeg pkg-config
       - name: Install dependencies
         run: |
           rustup component add clippy rustfmt
