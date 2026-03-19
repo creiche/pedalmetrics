@@ -1,0 +1,37 @@
+name: Coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+      - name: Install llvm-tools-preview and cargo-llvm-cov
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov
+      - name: Run coverage (exclude UI)
+        run: |
+          cargo llvm-cov --workspace --ignore-filename-regex='crates/.*/src/ui/' --lcov --output-path lcov.info
+      - name: Publish coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: true
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(cargo llvm-cov report --ignore-filename-regex='crates/.*/src/ui/' --summary-only | grep -oP '\d+\.\d+(?=%)')
+          echo "Coverage: $COVERAGE%"
+          COVERAGE_INT=${COVERAGE%.*}
+          if [ "$COVERAGE_INT" -lt 80 ]; then
+            echo "::error::Coverage $COVERAGE% is below 80%" && exit 1
+          fi

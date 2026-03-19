@@ -607,4 +607,27 @@ mod tests {
             720.0 / elapsed.as_secs_f64()
         );
     }
+
+    #[test]
+    fn test_render_progress_new_and_methods() {
+        let rp = RenderProgress::new(10);
+        assert_eq!(rp.current(), 0);
+        assert_eq!(rp.percent(), 0.0);
+        assert!(!rp.is_cancelled());
+        rp.current_frame.store(5, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(rp.current(), 5);
+        assert_eq!(rp.percent(), 50.0);
+        rp.cancel();
+        assert!(rp.is_cancelled());
+    }
+
+    #[test]
+    fn test_video_encoder_new_even_dimensions() {
+        let enc = VideoEncoder::new("/tmp/foo.mov", 101, 202, 30);
+        // Should round up to even
+        assert_eq!(enc.width, 102);
+        assert_eq!(enc.height, 202);
+        assert_eq!(enc.fps, 30);
+        assert_eq!(enc.output_path, std::path::PathBuf::from("/tmp/foo.mov"));
+    }
 }

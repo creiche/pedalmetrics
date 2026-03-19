@@ -350,3 +350,28 @@ impl<'a> ControlPanel<'a> {
 fn fmt_time(seconds: u32) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fmt_time_zero() {
+        assert_eq!(fmt_time(0), "0:00");
+    }
+
+    #[test]
+    fn test_fmt_time_under_minute() {
+        assert_eq!(fmt_time(42), "0:42");
+    }
+
+    #[test]
+    fn test_fmt_time_exact_minute() {
+        assert_eq!(fmt_time(60), "1:00");
+    }
+
+    #[test]
+    fn test_fmt_time_over_minute() {
+        assert_eq!(fmt_time(125), "2:05");
+    }
+}

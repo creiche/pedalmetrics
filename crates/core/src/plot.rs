@@ -338,4 +338,77 @@ mod tests {
             "expected plot.color to influence line rendering when line.color is unset"
         );
     }
+
+    #[test]
+    fn test_plotcache_build_empty_x_data_error() {
+        let cfg = course_plot_config();
+        let scene_color = TemplateColor::new("#0000ff");
+        let result = PlotCache::build(&cfg, vec![], vec![], &scene_color);
+        assert!(result.is_err(), "Should error on empty x_data");
+    }
+
+    #[test]
+    fn test_plotcache_build_mismatched_lengths_error() {
+        let cfg = course_plot_config();
+        let scene_color = TemplateColor::new("#0000ff");
+        let result = PlotCache::build(&cfg, vec![1.0, 2.0], vec![1.0], &scene_color);
+        assert!(result.is_err(), "Should error on mismatched x/y lengths");
+    }
+
+    #[test]
+    fn test_plotcache_build_with_fill_elevation() {
+        let mut cfg = course_plot_config();
+        cfg.value = PlotType::Elevation;
+        cfg.fill = Some(crate::template::FillStyle {
+            color: Some(TemplateColor::new("#00ff00")),
+            opacity: 0.5,
+        });
+        let x_data = vec![0.0, 1.0, 2.0, 3.0];
+        let y_data = vec![10.0, 12.0, 11.0, 13.0];
+        let scene_color = TemplateColor::new("#0000ff");
+        let cache = PlotCache::build(&cfg, x_data, y_data, &scene_color)
+            .expect("Should build elevation plot with fill");
+        // Just check that the background is not empty
+        assert!(cache.background.width() > 0 && cache.background.height() > 0);
+    }
+
+    #[test]
+    fn test_render_frame_with_custom_point_style() {
+        let mut cfg = course_plot_config();
+        cfg.points = vec![crate::template::PointStyle {
+            radius: 5.0,
+            color: Some(TemplateColor::new("#123456")),
+            edge_color: None,
+            opacity: 0.8,
+        }];
+        let x_data = vec![-82.10, -82.09, -82.08, -82.07];
+        let y_data = vec![29.10, 29.11, 29.115, 29.12];
+        let scene_color = TemplateColor::new("#0000ff");
+        let cache = PlotCache::build(&cfg, x_data, y_data, &scene_color)
+            .expect("Should build plot with custom point style");
+        let pixmap = cache.render_frame(&cfg, -82.09, 29.11, &scene_color)
+            .expect("Should render frame with custom marker");
+        assert!(pixmap.width() > 0 && pixmap.height() > 0);
+    }
+
+    #[test]
+    fn test_build_plot_data_course_and_elevation() {
+        // Mock Activity
+                use crate::activity::Activity;
+                let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+    <trk><name>test</name><trkseg>
+        <trkpt lat="1.0" lon="2.0"><ele>10.0</ele><time>2020-01-01T00:00:00Z</time></trkpt>
+        <trkpt lat="3.0" lon="4.0"><ele>20.0</ele><time>2020-01-01T00:00:01Z</time></trkpt>
+        <trkpt lat="5.0" lon="6.0"><ele>30.0</ele><time>2020-01-01T00:00:02Z</time></trkpt>
+    </trkseg></trk>
+</gpx>"#;
+                let act = Activity::from_str(gpx).expect("parse minimal gpx");
+                let (x, y) = build_plot_data(PlotType::Course, &act);
+                assert_eq!(x, vec![2.0, 4.0, 6.0]);
+                assert_eq!(y, vec![1.0, 3.0, 5.0]);
+                let (x, y) = build_plot_data(PlotType::Elevation, &act);
+                assert_eq!(x, vec![0.0, 1.0, 2.0]);
+                assert_eq!(y, vec![10.0, 20.0, 30.0]);
+    }
 }

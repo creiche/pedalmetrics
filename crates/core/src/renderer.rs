@@ -725,4 +725,118 @@ mod tests {
         assert!(below_centroid > value_anchor_y + 5.0);
         assert!(below_centroid > above_centroid + 20.0);
     }
+
+    #[test]
+    fn renderstate_build_invalid_plot_config_error() {
+        let activity = build_activity();
+        let mut template = Template::default_4k();
+        // Add a plot with no data (invalid config)
+        template.plots.push(crate::template::PlotConfig {
+            value: crate::template::PlotType::Course,
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            color: None,
+            opacity: Some(1.0),
+            dpi: 72,
+            line: crate::template::LineStyle { width: 2.0, color: None },
+            fill: None,
+            rotation: 0.0,
+            points: vec![],
+            point_label: None,
+        });
+        // Remove all course data from activity to force error
+        let mut activity = activity;
+        activity.course.clear();
+        let result = RenderState::build(activity, template, ".");
+        assert!(result.is_err(), "Should error on invalid plot config");
+    }
+
+    #[test]
+    fn render_frame_scaled_works() {
+        let activity = build_activity();
+        let template = Template::default_4k();
+        let state = RenderState::build(activity, template, ".").unwrap();
+        let img = state.render_frame_scaled(0, 0.5).unwrap();
+        assert!(img.width() < state.base_image.width());
+        assert!(img.height() < state.base_image.height());
+    }
+
+    #[test]
+    fn format_value_various_types() {
+        use crate::template::SceneConfig;
+        let activity = build_activity();
+        let scene = SceneConfig {
+            width: 800,
+            height: 400,
+            fps: 30,
+            font: "Arial.ttf".to_string(),
+            font_size: 30.0,
+            color: Color("#ffffff".to_string()),
+            opacity: 1.0,
+            decimal_rounding: Some(1),
+            overlay_filename: "overlay.mov".to_string(),
+            start: 0,
+            end: 1,
+        };
+        let mut value = ValueConfig {
+            value: ValueType::Speed,
+            x: 0,
+            y: 0,
+            unit: Some(UnitSystem::Imperial),
+            font: None,
+            font_size: Some(30.0),
+            color: None,
+            opacity: None,
+            suffix: Some(" mph".to_string()),
+            decimal_rounding: Some(1),
+            hours_offset: None,
+            time_format: None,
+            value_label: None,
+            value_label_position: None,
+        };
+        let s = super::format_value(&value, &activity, 0, &scene);
+        assert!(s.ends_with("mph"));
+        value.value = ValueType::Elevation;
+        value.unit = Some(UnitSystem::Imperial);
+        let s = super::format_value(&value, &activity, 0, &scene);
+        assert!(s.len() > 0);
+        value.value = ValueType::Time;
+        value.unit = None;
+        value.time_format = Some("%H:%M".to_string());
+        let s = super::format_value(&value, &activity, 0, &scene);
+        assert!(s.contains(":"));
+        value.value = ValueType::Timecode;
+        value.suffix = None;
+        let s = super::format_value(&value, &activity, 0, &scene);
+        assert!(s.contains(":"));
+    }
+
+    #[test]
+    fn composite_onto_and_rotate_image() {
+        let mut img1 = RgbaImage::from_pixel(10, 10, Rgba([255, 0, 0, 255]));
+        let img2 = RgbaImage::from_pixel(5, 5, Rgba([0, 255, 0, 128]));
+        super::composite_onto(&mut img1, &img2, 2, 2);
+        // Check that the composite region is not pure red
+        let px = img1.get_pixel(4, 4);
+        assert!(px[1] > 0); // green channel present
+        let rotated = super::rotate_image(&img1, 45.0);
+        assert!(rotated.width() > 0 && rotated.height() > 0);
+    }
+
+    #[test]
+    fn renderer_methods() {
+        let activity = build_activity();
+        let template = Template::default_4k();
+        let state = RenderState::build(activity, template, ".").unwrap();
+        let mut renderer = Renderer::new(state.clone());
+        assert_eq!(renderer.fps(), state.template.scene.fps);
+        assert_eq!(renderer.width(), state.template.scene.width);
+        assert_eq!(renderer.height(), state.template.scene.height);
+        assert_eq!(renderer.total_frames(), state.template.scene.total_frames());
+        let _ = renderer.render_frame(0).unwrap();
+        let _ = renderer.start_timecode_string();
+        let _ = renderer.into_state();
+    }
 }

@@ -116,15 +116,7 @@ impl<'a> TemplateEditor<'a> {
             changed = true;
         }
         if ui.small_button("+ Add Label").clicked() {
-            template.labels.push(LabelConfig {
-                text: "Label".to_string(),
-                x: 100,
-                y: 100,
-                font_size: Some(48.0),
-                font: None,
-                color: None,
-                opacity: None,
-            });
+            template.labels.push(default_label_config());
             changed = true;
         }
 
@@ -456,5 +448,47 @@ impl<'a> TemplateEditor<'a> {
         if changed {
             self.app.render_state_dirty = true;
         }
+    }
+}
+
+
+fn default_label_config() -> LabelConfig {
+    LabelConfig {
+        text: "Label".to_string(),
+        x: 100,
+        y: 100,
+        font_size: Some(48.0),
+        font: None,
+        color: None,
+        opacity: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pedalmetrics_core::template::{ValueType, ValueLabelPosition};
+
+    #[test]
+    fn test_default_value_config_fields() {
+        let v = default_value_config(ValueType::Speed);
+        assert_eq!(v.value, ValueType::Speed);
+        assert_eq!(v.x, 100);
+        assert_eq!(v.y, 100);
+        assert_eq!(v.font_size, Some(80.0));
+        assert_eq!(v.value_label, Some("Speed".to_string()));
+        assert_eq!(v.value_label_position, Some(ValueLabelPosition::Below));
+    }
+
+    #[test]
+    fn test_default_label_config_fields() {
+        let l = default_label_config();
+        assert_eq!(l.text, "Label");
+        assert_eq!(l.x, 100);
+        assert_eq!(l.y, 100);
+        assert_eq!(l.font_size, Some(48.0));
+        assert!(l.font.is_none());
+        assert!(l.color.is_none());
+        assert!(l.opacity.is_none());
     }
 }
