@@ -16,6 +16,8 @@ telemetry (speed, power, heart rate, cadence, elevation, gradient, etc.) synced
 to a GPX track. The overlay can then be composited over ride footage in any
 video editor.
 
+![Description](assets/screenshot.png)
+
 ## Why a Rust rewrite?
 
 The original Cyclemetry project uses a React + Tauri + Python Flask + ffmpeg
