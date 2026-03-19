@@ -25,11 +25,6 @@ jobs:
       - name: Run coverage (exclude UI)
         run: |
           cargo llvm-cov --workspace --ignore-filename-regex='crates/.*/src/ui/' --lcov --output-path lcov.info
-      - name: Publish coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          fail_ci_if_error: true
       - name: Check coverage threshold
         run: |
           COVERAGE=$(cargo llvm-cov report --ignore-filename-regex='crates/.*/src/ui/' --summary-only | grep -oP '\d+\.\d+(?=%)')
