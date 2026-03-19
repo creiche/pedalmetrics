@@ -1,0 +1,22 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Install FFmpeg (macOS)
+        run: brew install ffmpeg
+      - name: Run tests
+        run: cargo test --workspace --all-features --locked
