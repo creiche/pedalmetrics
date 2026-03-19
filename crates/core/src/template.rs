@@ -527,8 +527,12 @@ where
                 }
             }
             if let Some((bad_key, _)) = map.into_iter().next() {
+                let expected_keys = ALL_VALUE_TYPES.iter()
+                    .map(|vt| vt.key())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Err(de::Error::custom(format!(
-                    "Unknown value key '{bad_key}'. Expected one of: speed, power, heart_rate, cadence, gradient, elevation, distance, time, temperature"
+                    "Unknown value key '{bad_key}'. Expected one of: {expected_keys}"
                 )));
             }
             Ok(out)

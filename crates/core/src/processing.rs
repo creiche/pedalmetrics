@@ -109,55 +109,55 @@ fn mat_mul_ata(a: &[f64], rows: usize, cols: usize) -> Vec<f64> {
     out
 }
 
-/// Invert a small (cols x cols) symmetric positive-definite matrix using Cholesky.
-/// Returns only the first row of the inverse (sufficient for SavGol coefficients).
+/// Invert a small (n x n) symmetric positive-definite matrix using Cholesky decomposition
+/// (A = L * L^T) and returns only the first row of the inverse (sufficient for SavGol
+/// coefficients). Exploits the SPD structure of A^T * A for better numerical efficiency.
 fn mat_inv_small(ata: &[f64], n: usize) -> Vec<f64> {
-    // Gaussian elimination
-    let mut m = vec![0.0f64; n * n];
-    let mut inv = vec![0.0f64; n * n];
+    // Cholesky factorisation: compute lower-triangular L such that A = L * L^T.
+    // l[i*n + j] stores L[i][j] for j <= i.
+    let mut l = vec![0.0f64; n * n];
     for i in 0..n {
-        for j in 0..n {
-            m[i * n + j] = ata[i * n + j];
-        }
-        inv[i * n + i] = 1.0;
-    }
-
-    for col in 0..n {
-        // Find pivot
-        let mut max_row = col;
-        let mut max_val = m[col * n + col].abs();
-        for row in (col + 1)..n {
-            if m[row * n + col].abs() > max_val {
-                max_val = m[row * n + col].abs();
-                max_row = row;
+        for j in 0..=i {
+            let mut s = ata[i * n + j];
+            for k in 0..j {
+                s -= l[i * n + k] * l[j * n + k];
             }
-        }
-        // Swap rows
-        for j in 0..n {
-            m.swap(col * n + j, max_row * n + j);
-            inv.swap(col * n + j, max_row * n + j);
-        }
-        let pivot = m[col * n + col];
-        if pivot.abs() < 1e-12 { continue; }
-        for j in 0..n {
-            m[col * n + j] /= pivot;
-            inv[col * n + j] /= pivot;
-        }
-        for row in 0..n {
-            if row != col {
-                let factor = m[row * n + col];
-                for j in 0..n {
-                    let mv = m[col * n + j];
-                    let iv = inv[col * n + j];
-                    m[row * n + j] -= factor * mv;
-                    inv[row * n + j] -= factor * iv;
-                }
-            }
+            l[i * n + j] = if i == j {
+                s.max(0.0).sqrt() // clamp prevents sqrt of tiny negatives due to floating-point noise
+            } else {
+                let diag = l[j * n + j];
+                if diag.abs() < 1e-12 { 0.0 } else { s / diag }
+            };
         }
     }
 
-    // Return only the first row (needed for SavGol)
-    inv[0..n].to_vec()
+    // Solve A * x = e_0 (first standard basis vector) for x = first column of A^{-1}.
+    // Because A is symmetric, the first column equals the first row.
+
+    // Forward substitution: solve L * y = e_0
+    let mut y = vec![0.0f64; n];
+    for i in 0..n {
+        let rhs = if i == 0 { 1.0 } else { 0.0 };
+        let mut s = rhs;
+        for k in 0..i {
+            s -= l[i * n + k] * y[k];
+        }
+        let diag = l[i * n + i];
+        y[i] = if diag.abs() < 1e-12 { 0.0 } else { s / diag };
+    }
+
+    // Back substitution: solve L^T * x = y
+    let mut x = vec![0.0f64; n];
+    for i in (0..n).rev() {
+        let mut s = y[i];
+        for k in (i + 1)..n {
+            s -= l[k * n + i] * x[k]; // L^T[i][k] = L[k][i]
+        }
+        let diag = l[i * n + i];
+        x[i] = if diag.abs() < 1e-12 { 0.0 } else { s / diag };
+    }
+
+    x
 }
 
 // ---------------------------------------------------------------------------
@@ -304,5 +304,30 @@ mod tests {
         let data: Vec<f64> = (0..20).map(|i| i as f64 + (i % 3) as f64 * 0.5).collect();
         let out = lowess_smooth(&data, 0.3, 1);
         assert_eq!(out.len(), data.len());
+    }
+
+    #[test]
+    fn test_savgol_coefficients_window5_order2() {
+        // Canonical Savitzky-Golay smoothing coefficients: [-3,12,17,12,-3]/35
+        let coeffs = savgol_coefficients(5, 2);
+        let expected = [-3.0_f64 / 35.0, 12.0 / 35.0, 17.0 / 35.0, 12.0 / 35.0, -3.0 / 35.0];
+        assert_eq!(coeffs.len(), expected.len());
+        for (got, exp) in coeffs.iter().zip(expected.iter()) {
+            assert!((got - exp).abs() < 1e-9, "coeff mismatch: got {got}, expected {exp}");
+        }
+    }
+
+    #[test]
+    fn test_savgol_coefficients_window11_order3() {
+        // Canonical SG coefficients for window=11, poly_order=3 (the case used in activity.rs).
+        // Expected: [-36, 9, 44, 69, 84, 89, 84, 69, 44, 9, -36] / 429
+        let coeffs = savgol_coefficients(11, 3);
+        let denom = 429.0_f64;
+        let expected = [-36.0, 9.0, 44.0, 69.0, 84.0, 89.0, 84.0, 69.0, 44.0, 9.0, -36.0]
+            .map(|v| v / denom);
+        assert_eq!(coeffs.len(), expected.len());
+        for (got, exp) in coeffs.iter().zip(expected.iter()) {
+            assert!((got - exp).abs() < 1e-9, "coeff mismatch: got {got}, expected {exp}");
+        }
     }
 }

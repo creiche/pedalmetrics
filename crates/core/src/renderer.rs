@@ -160,14 +160,11 @@ impl RenderState {
             );
             draw_text(
                 &mut img,
-                &text,
+                &value_layout,
                 value_config.x,
                 value_config.y,
-                value_font_name,
-                value_font_size,
                 &value_color,
                 value_opacity,
-                &mut font_cache,
             );
 
             if let Some(label_text) = value_config
@@ -197,14 +194,11 @@ impl RenderState {
 
                 draw_text(
                     &mut img,
-                    label_text,
+                    &label_layout,
                     value_config.x,
                     label_y,
-                    value_font_name,
-                    label_font_size,
                     &value_color,
                     value_opacity,
-                    &mut font_cache,
                 );
             }
         }
@@ -390,38 +384,32 @@ fn draw_label(
     template: &Template,
     font_cache: &mut FontCache,
 ) {
+    let font = font_cache.get_or_load(template.label_font(label));
+    let layout = layout_text(font, &label.text, template.label_font_size(label));
     draw_text(
         img,
-        &label.text,
+        &layout,
         label.x,
         label.y,
-        template.label_font(label),
-        template.label_font_size(label),
         template.label_color(label),
         template.label_opacity(label),
-        font_cache,
     );
 }
 
 fn draw_text(
     img: &mut RgbaImage,
-    text: &str,
+    layout: &TextLayout,
     x: i32,
     y: i32,
-    font_name: &str,
-    font_size: f32,
     color: &Color,
     opacity: f32,
-    font_cache: &mut FontCache,
 ) {
-    let font = font_cache.get_or_load(font_name);
     let [r, g, b, a] = color.to_rgba();
     let color_alpha = (a as f32 / 255.0) * opacity.clamp(0.0, 1.0);
-    let layout = layout_text(font, text, font_size);
     let x_offset = x - layout.min_x;
     let y_offset = y - layout.min_y;
 
-    for glyph in layout.glyphs {
+    for glyph in &layout.glyphs {
         for row in 0..glyph.metrics.height {
             for col in 0..glyph.metrics.width {
                 let alpha = glyph.bitmap[row * glyph.metrics.width + col];

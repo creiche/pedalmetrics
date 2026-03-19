@@ -55,7 +55,7 @@ mkdir -p "$FRAMEWORKS_DIR"
 copy_latest_lib() {
   local pattern="$1"
   local pick
-  pick="$(ls -1 "$FFMPEG_PREFIX/lib"/$pattern 2>/dev/null | head -n 1 || true)"
+  pick="$(ls -1 "$FFMPEG_PREFIX/lib"/$pattern 2>/dev/null | sort -V | tail -n 1 || true)"
   if [[ -z "$pick" ]]; then
     echo "Missing required FFmpeg lib pattern: $pattern" >&2
     exit 1

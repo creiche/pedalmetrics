@@ -35,6 +35,7 @@
             "distance": { "$ref": "#/$defs/valueConfigFields" },
             "time": { "$ref": "#/$defs/valueConfigFields" },
             "temperature": { "$ref": "#/$defs/valueConfigFields" }
+              ,"timecode": { "$ref": "#/$defs/valueConfigFields" }
           }
         },
         {
@@ -93,6 +94,7 @@
         "elevation",
         "distance",
         "time",
+        "timecode",
         "temperature"
       ]
     },
