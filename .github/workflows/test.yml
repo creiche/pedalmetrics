@@ -28,5 +28,7 @@ jobs:
           override: true
       - name: Install FFmpeg (macOS)
         run: brew install ffmpeg
+      - name: Build in release mode
+        run: cargo build --workspace --release --all-features --locked
       - name: Run tests
         run: cargo test --workspace --all-features --locked
