@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+      - name: Install dependencies
+        run: |
+          rustup component add clippy rustfmt
+      - name: Build
+        run: cargo build --release --workspace
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle
+      - name: Add cargo bin to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Bundle .app (macOS)
+        working-directory: crates/app
+        run: cargo bundle --release
+      - name: Run tests
+        run: cargo test --workspace
+      - name: Bundle FFmpeg (macOS)
+        run: |
+          bash ../../scripts/macos_bundle_ffmpeg.sh ../../target/release/bundle/osx/Pedalmetrics.app || echo 'Bundle script failed or not needed.'
+      - name: Verify FFmpeg dylibs in .app
+        run: otool -L target/release/bundle/osx/Pedalmetrics.app/Contents/MacOS/pedalmetrics
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg --volname "Pedalmetrics" --window-pos 200 120 --window-size 800 400 --icon-size 100 --icon "Pedalmetrics.app" 200 190 --hide-extension "Pedalmetrics.app" --app-drop-link 600 185 target/release/bundle/osx/Pedalmetrics.dmg target/release/bundle/osx/Pedalmetrics.app
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedalmetrics-macos
+          path: |
+            target/release/bundle/osx/Pedalmetrics.app
+            target/release/bundle/osx/Pedalmetrics.dmg
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pedalmetrics-macos
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pedalmetrics
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

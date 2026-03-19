@@ -1,0 +1,723 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "./template.schema.json",
+  "title": "Pedalmetrics Template",
+  "description": "Schema for Pedalmetrics overlay template JSON files.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional schema reference for editor autocomplete and validation."
+    },
+    "scene": {
+      "$ref": "#/$defs/sceneConfig"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/labelConfig"
+      },
+      "default": []
+    },
+    "values": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "speed": { "$ref": "#/$defs/valueConfigFields" },
+            "power": { "$ref": "#/$defs/valueConfigFields" },
+            "heart_rate": { "$ref": "#/$defs/valueConfigFields" },
+            "cadence": { "$ref": "#/$defs/valueConfigFields" },
+            "gradient": { "$ref": "#/$defs/valueConfigFields" },
+            "elevation": { "$ref": "#/$defs/valueConfigFields" },
+            "distance": { "$ref": "#/$defs/valueConfigFields" },
+            "time": { "$ref": "#/$defs/valueConfigFields" },
+            "temperature": { "$ref": "#/$defs/valueConfigFields" }
+              ,"timecode": { "$ref": "#/$defs/valueConfigFields" }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/valueConfig"
+          }
+        }
+      ],
+      "default": []
+    },
+    "plots": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "course": { "$ref": "#/$defs/plotConfigFields" },
+            "elevation": { "$ref": "#/$defs/plotConfigFields" }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/plotConfig"
+          }
+        }
+      ],
+      "default": []
+    }
+  },
+  "required": [
+    "scene"
+  ],
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+      "description": "Hex color in #rrggbb or #rrggbbaa format."
+    },
+    "unitSystem": {
+      "type": "string",
+      "enum": [
+        "imperial",
+        "metric"
+      ]
+    },
+    "valueType": {
+      "type": "string",
+      "enum": [
+        "speed",
+        "power",
+        "heart_rate",
+        "cadence",
+        "gradient",
+        "elevation",
+        "distance",
+        "time",
+        "timecode",
+        "temperature"
+      ]
+    },
+    "plotType": {
+      "type": "string",
+      "enum": [
+        "course",
+        "elevation"
+      ]
+    },
+    "valueLabelPosition": {
+      "type": "string",
+      "enum": [
+        "above",
+        "below"
+      ]
+    },
+    "sceneConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "font": {
+          "type": "string",
+          "default": "Arial.ttf"
+        },
+        "font_size": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 30
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1.0
+        },
+        "decimal_rounding": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "overlay_filename": {
+          "type": "string",
+          "default": "overlay.mov"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "start",
+        "end"
+      ]
+    },
+    "labelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opacity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "text",
+        "x",
+        "y"
+      ]
+    },
+    "valueConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/valueType"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/unitSystem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opacity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "suffix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decimal_rounding": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "hours_offset": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "time_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value_label_position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/valueLabelPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "x",
+        "y"
+      ]
+    },
+    "valueConfigFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/unitSystem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opacity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "suffix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decimal_rounding": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "hours_offset": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "time_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value_label_position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/valueLabelPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ]
+    },
+    "pointStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 3.0
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1.0
+        },
+        "edge_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pointLabelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x_offset": {
+          "type": "number",
+          "default": 0
+        },
+        "y_offset": {
+          "type": "number",
+          "default": 0
+        },
+        "font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unitSystem"
+          },
+          "default": []
+        }
+      }
+    },
+    "lineStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 2
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "fillStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1.0
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "plotConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/plotType"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opacity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "dpi": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 96
+        },
+        "line": {
+          "$ref": "#/$defs/lineStyle"
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/fillStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rotation": {
+          "type": "number",
+          "default": 0
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pointStyle"
+          },
+          "default": []
+        },
+        "point_label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pointLabelConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "x",
+        "y",
+        "width",
+        "height"
+      ]
+    },
+    "plotConfigFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/color"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opacity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "dpi": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 96
+        },
+        "line": {
+          "$ref": "#/$defs/lineStyle"
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/fillStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rotation": {
+          "type": "number",
+          "default": 0
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pointStyle"
+          },
+          "default": []
+        },
+        "point_label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pointLabelConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ]
+    }
+  }
+}

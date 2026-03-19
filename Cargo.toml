@@ -1,0 +1,71 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/app",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Pedalmetrics Contributors"]
+license = "MIT"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# GPX / XML parsing
+gpx = "0.10"
+quick-xml = { version = "0.37", features = ["serialize"] }
+
+# Numerics
+ndarray = "0.16"
+
+# Signal processing
+rustfft = "6"
+
+# 2D rendering
+tiny-skia = "0.11"
+ab_glyph = "0.2"
+fontdue = "0.9"
+image = { version = "0.25", features = ["png", "jpeg"] }
+imageproc = "0.25"
+
+# Video encoding
+ffmpeg-next = "8"
+
+# Parallelism
+rayon = "1"
+
+# GUI
+eframe = { version = "0.31", features = ["persistence"] }
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["image"] }
+
+# File dialogs
+rfd = "0.15"
+
+# Async runtime (for eframe)
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
