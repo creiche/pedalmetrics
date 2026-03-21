@@ -3,7 +3,7 @@
 A desktop app for creating telemetry overlay videos from GPX activity data.
 
 > **Independent project notice:** Pedalmetrics is an independent Rust rewrite
-> inspired by [Cyclemetry](https://github.com/brycedrennan/cyclemetry). It is
+> inspired by [Cyclemetry](https://github.com/walkersutton/cyclemetry). It is
 > not affiliated with, endorsed by, or maintained by the original Cyclemetry
 > authors.
 
